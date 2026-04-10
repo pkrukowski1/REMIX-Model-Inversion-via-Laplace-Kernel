@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cl_laplace_kernel_cifar100_10x10
+#SBATCH --job-name=cl_laplace_kernel_cifar100_20x5
 #SBATCH --qos=normal
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
