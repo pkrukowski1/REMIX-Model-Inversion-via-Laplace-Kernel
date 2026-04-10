@@ -11,7 +11,7 @@ export CUBLAS_WORKSPACE_CONFIG=:4096:8
 # base parameter
 BASE_PATH='/shared/results/pkrukowski/LaplaceKernelInContinualLearning/tiny_imagenet_10x20'
 dataset='seq_tinyimagenet'
-data_path='/shared/sets/datasets'
+data_path='/shared/sets/datasets/tiny-imagenet-200'
 use_cuda=1
 max_task=-1
 save_ckpt=1

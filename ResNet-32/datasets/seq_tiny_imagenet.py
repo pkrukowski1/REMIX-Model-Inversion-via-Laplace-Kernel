@@ -34,7 +34,7 @@ class SeqTinyImageNet(object):
                 img = Image.open(img_file).convert("RGB")
                 self.train_samples[lab].append([img, lab])
         # load test data
-        val_path = os.path.join(self.data_path, 'val')
+        val_path = os.path.join(self.data_path, 'val_orig')
         val_file = os.path.join(val_path, 'val_annotations.txt')
         with open(val_file, 'r', encoding='utf8') as fr:
             lines = fr.read().strip().split('\n')
@@ -45,7 +45,7 @@ class SeqTinyImageNet(object):
         for line in lines:
             fname, wnid = line.split("\t")[:2]
             lab = self.wnids[wnid]
-            img_file = os.path.join(val_path, 'images', fname)
+            img_file = os.path.join(val_path, 'images', '1', fname)
             img = Image.open(img_file).convert("RGB")
             self.test_samples[lab].append([img, lab])
         # transforms
