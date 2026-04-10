@@ -135,3 +135,4 @@ for alpha_gmrf in "${ALPHA_GMRF[@]}"; do
 		--inv_milestones=$inv_milestones \
 		--inv_lr_rate=$inv_lr_rate \
 		--inv_warmup=$inv_warmup
+done
