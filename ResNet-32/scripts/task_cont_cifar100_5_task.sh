@@ -109,6 +109,7 @@ python3 -u main_task_contrastive_cl.py --local_path=$local_path \
 	--tune_lr=$tune_lr \
 	--alpha_pr=$alpha_pr \
 	--alpha_rf=$alpha_rf \
+	--alpha_gmrf=$alpha_gmrf \
 	--rf_factor=$rf_factor \
 	--layer_wise=$layer_wise \
 	--layer_batch=$layer_batch \
