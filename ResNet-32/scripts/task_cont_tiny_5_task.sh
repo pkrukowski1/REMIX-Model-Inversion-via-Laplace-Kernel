@@ -15,7 +15,6 @@ data_path='/shared/sets/datasets/tiny-imagenet-200'
 use_cuda=1
 max_task=-1
 save_ckpt=1
-seed=0
 # data parameter
 init_split=0
 tasks=5
@@ -69,69 +68,73 @@ inv_milestones='80,120'
 inv_lr_rate=0.5
 inv_warmup=5
 
-ALPHA_GMRF=(0.01 0.05 0.1 0.25 0.5 1.0)
+# ALPHA_GMRF=(0.01 0.05 0.1 0.25 0.5 1.0)
+SEED=(1 2 3 4 5)
+ALPHA_GMRF=(0.1)
 
 for alpha_gmrf in "${ALPHA_GMRF[@]}"; do
-    echo "=========================================================="
-    echo "Starting run with alpha_gmrf = ${alpha_gmrf}"
-    echo "=========================================================="
-    
-    local_path="${BASE_PATH}/gmrf_alpha_${alpha_gmrf}"
-    mkdir -p "${local_path}"
+	for seed in "${SEED[@]}"; do
+		echo "==============================================================="
+		echo "Starting run with alpha_gmrf = ${alpha_gmrf} and seed = ${seed}"
+		echo "==============================================================="
+		
+		local_path="${BASE_PATH}/gmrf_alpha_${alpha_gmrf}_seed_${seed}"
+		mkdir -p "${local_path}"
 
-	python3 -u main_task_contrastive_cl.py --local_path=$local_path \
-		--dataset=$dataset \
-		--data_path=$data_path \
-		--use_cuda=$use_cuda \
-		--max_task=$max_task \
-		--save_ckpt=$save_ckpt \
-		--seed=$seed \
-		--init_split=$init_split \
-		--tasks=$tasks \
-		--class_order_file=$class_order_file \
-		--batch_size=$batch_size \
-		--base_lr=$base_lr \
-		--lr_factor=$lr_factor \
-		--lrs=$lrs \
-		--momentum=$momentum \
-		--weight_decay=$weight_decay \
-		--milestones=$milestones \
-		--finetuning_epochs=$finetuning_epochs \
-		--finetuning_lr=$finetuning_lr \
-		--max_epochs=$max_epochs \
-		--epochs=$epochs \
-		--lambda_ce=$lambda_ce \
-		--lambda_hkd=$lambda_hkd \
-		--lambda_rkd=$lambda_rkd \
-		--lambda_ft=$lambda_ft \
-		--lambda_fkd=$lambda_fkd \
-		--ce_mode=$ce_mode \
-		--init_samples=$init_samples \
-		--per_task_samples=$per_task_samples \
-		--gen_batch_size=$gen_batch_size \
-		--use_unslt=$use_unslt \
-		--feat_type=$feat_type \
-		--act=$act \
-		--save_data=$save_data \
-		--cont_lr=$cont_lr \
-		--cont_epoch=$cont_epoch \
-		--cont_blocks=$cont_blocks \
-		--cont_step=$cont_step \
-		--cont_rslt=$cont_rslt \
-		--cont_temp=$cont_temp \
-		--inversion_lr=$inversion_lr \
-		--train_steps=$train_steps \
-		--tune_steps=$tune_steps \
-		--tune_lr=$tune_lr \
-		--alpha_pr=$alpha_pr \
-		--alpha_rf=$alpha_rf \
-		--alpha_gmrf=$alpha_gmrf \
-		--rf_factor=$rf_factor \
-		--layer_wise=$layer_wise \
-		--layer_batch=$layer_batch \
-		--boost_factor=$boost_factor \
-		--search_param=$search_param \
-		--inv_milestones=$inv_milestones \
-		--inv_lr_rate=$inv_lr_rate \
-		--inv_warmup=$inv_warmup
+		python3 -u main_task_contrastive_cl.py --local_path=$local_path \
+			--dataset=$dataset \
+			--data_path=$data_path \
+			--use_cuda=$use_cuda \
+			--max_task=$max_task \
+			--save_ckpt=$save_ckpt \
+			--seed=$seed \
+			--init_split=$init_split \
+			--tasks=$tasks \
+			--class_order_file=$class_order_file \
+			--batch_size=$batch_size \
+			--base_lr=$base_lr \
+			--lr_factor=$lr_factor \
+			--lrs=$lrs \
+			--momentum=$momentum \
+			--weight_decay=$weight_decay \
+			--milestones=$milestones \
+			--finetuning_epochs=$finetuning_epochs \
+			--finetuning_lr=$finetuning_lr \
+			--max_epochs=$max_epochs \
+			--epochs=$epochs \
+			--lambda_ce=$lambda_ce \
+			--lambda_hkd=$lambda_hkd \
+			--lambda_rkd=$lambda_rkd \
+			--lambda_ft=$lambda_ft \
+			--lambda_fkd=$lambda_fkd \
+			--ce_mode=$ce_mode \
+			--init_samples=$init_samples \
+			--per_task_samples=$per_task_samples \
+			--gen_batch_size=$gen_batch_size \
+			--use_unslt=$use_unslt \
+			--feat_type=$feat_type \
+			--act=$act \
+			--save_data=$save_data \
+			--cont_lr=$cont_lr \
+			--cont_epoch=$cont_epoch \
+			--cont_blocks=$cont_blocks \
+			--cont_step=$cont_step \
+			--cont_rslt=$cont_rslt \
+			--cont_temp=$cont_temp \
+			--inversion_lr=$inversion_lr \
+			--train_steps=$train_steps \
+			--tune_steps=$tune_steps \
+			--tune_lr=$tune_lr \
+			--alpha_pr=$alpha_pr \
+			--alpha_rf=$alpha_rf \
+			--alpha_gmrf=$alpha_gmrf \
+			--rf_factor=$rf_factor \
+			--layer_wise=$layer_wise \
+			--layer_batch=$layer_batch \
+			--boost_factor=$boost_factor \
+			--search_param=$search_param \
+			--inv_milestones=$inv_milestones \
+			--inv_lr_rate=$inv_lr_rate \
+			--inv_warmup=$inv_warmup
+	done
 done
