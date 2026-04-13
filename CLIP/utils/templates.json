@@ -1,0 +1,22 @@
+{
+    "cifar10": ["a photo of a {}."],
+    "cifar100": ["a photo of a {}."],
+    "cifar224": ["a photo of a {}."],
+    "seq_cifar10": ["a photo of a {}."],
+    "seq_cifar100": ["a photo of a {}."],
+    "tinyimagenet": ["a photo of a {}."],
+    "seq_tinyimagenet": ["a photo of a {}."],
+    "cub": ["a photo of a {}, a type of bird."],
+    "imagenet": ["a photo of a {}."],
+    "imagenet100": ["a photo of a {}."],
+    "imagenet1000": ["a photo of a {}."],
+    "imagenet-r": ["a photo of a {}."],
+    "imagenet-a": ["a photo of a {}."],
+    "domainnet": ["a photo of a {}."],
+    "ucf101": ["a photo of a person doing {}."],
+    "aircraft": ["a photo of a {}, a type of aircraft."],
+    "cars": ["a photo of a {}, a type of car."],
+    "isic": ["a photo of a {}, a type of skin lesion."],
+    "caltech101": ["a photo of a {}."],
+    "objectnet": ["a photo of a {}."]
+}
