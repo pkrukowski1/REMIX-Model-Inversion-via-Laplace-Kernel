@@ -10,7 +10,7 @@ import yaml
 import warnings
 
 
-base_dir = '/data/Datasets/'
+base_dir = '/shared/sets/datasets/'
 
 
 def check_isfile(fpath):
@@ -240,7 +240,7 @@ class iCIFAR224(iData):
 
     def download_data(self):
         try:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
             train_dataset = datasets.cifar.CIFAR100(os.path.join(base_dir, 'cifarpy'), train=True, download=True)
             test_dataset = datasets.cifar.CIFAR100(os.path.join(base_dir, 'cifarpy'), train=False, download=True)
         except:
@@ -341,7 +341,7 @@ class iImageNetR(iData):
             # base_dir = './data/'
             base_dir = os.path.dirname(os.getcwd())
         else:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
 
         # assert 0, "You should specify the folder of your dataset"
         # train_dir = "./data/imagenet-r/train/"
@@ -406,7 +406,7 @@ class CUB(iData):
             # base_dir = './data/'
             base_dir = os.path.dirname(os.getcwd())
         else:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
         # train_dir = "./data/cub/train/"
         # test_dir = "./data/cub/test/"
         train_dir = os.path.join(base_dir, 'cub/train')
@@ -447,7 +447,7 @@ class TinyIMN(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
         # train_dir = "./data/cub/train/"
         # test_dir = "./data/cub/test/"
         train_dir = os.path.join(base_dir, 'tiny-imagenet-200')
@@ -455,13 +455,13 @@ class TinyIMN(iData):
         self.class_names = load_json('utils/labels.json')['tinyimagenet']
         print(self.class_names)
         
-        wnids_file = "/data/Datasets/tiny-imagenet-200/wnids.txt"
+        wnids_file = "/shared/sets/datasets/tiny-imagenet-200/wnids.txt"
         with open(wnids_file, "r") as f:
             class_ids = sorted([line.strip() for line in f.readlines()])  # Sort WNIDs
         # print(f"Total classes: {len(class_ids)}")
         # print(f"Example sorted class IDs: {class_ids[:5]}")
         # Load WordNet ID to class name mapping
-        words_file = "/data/Datasets/tiny-imagenet-200/words.txt"
+        words_file = "/shared/sets/datasets/tiny-imagenet-200/words.txt"
         wnid_to_classname = {}
         with open(words_file, "r") as f:
             for line in f.readlines():
@@ -531,7 +531,7 @@ class DomainNet(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
 
         
         self.image_list_root = os.path.join(base_dir, 'domainnet/')
@@ -632,7 +632,7 @@ class AirCraft(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
         # train_dir = "./data/cub/train/"
         # test_dir = "./data/cub/test/"
         train_dir = os.path.join(base_dir, 'aircraft/train')
@@ -681,7 +681,7 @@ class Cars(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/data/Datasets/'
+            base_dir = '/shared/sets/datasets/'
         train_dir = os.path.join(base_dir, 'cars/train')
         test_dir = os.path.join(base_dir, 'cars/test')
 
@@ -701,98 +701,98 @@ class Cars(iData):
         # assert train_dset.class_to_idx.keys() == self.class_names
         
 
-class ISIC(iData):
-    def __init__(self, args):
-        super().__init__()
+# class ISIC(iData):
+#     def __init__(self, args):
+#         super().__init__()
 
-        self.args = args
-        self.use_path = False
+#         self.args = args
+#         self.use_path = False
 
-        if args["model_name"] == "coda_prompt":
-            self.train_trsf = build_transform_coda_prompt(True, args)
-            self.test_trsf = build_transform_coda_prompt(False, args)
-        else:
-            self.train_trsf = build_transform(True, args)
-            self.test_trsf = build_transform(False, args)
-        self.common_trsf = [
-            # transforms.ToTensor(),
-        ]
+#         if args["model_name"] == "coda_prompt":
+#             self.train_trsf = build_transform_coda_prompt(True, args)
+#             self.test_trsf = build_transform_coda_prompt(False, args)
+#         else:
+#             self.train_trsf = build_transform(True, args)
+#             self.test_trsf = build_transform(False, args)
+#         self.common_trsf = [
+#             # transforms.ToTensor(),
+#         ]
         
-        # SIZE = (224, 224)
-        # MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
-        # self.train_trsf = transforms.Compose([
-        #     transforms.Resize(256, interpolation=InterpolationMode.BICUBIC),
-        #     transforms.RandomCrop(SIZE[0]),
-        #     transforms.RandomHorizontalFlip(0.5),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize(mean=MEAN, std=STD),
-        # ])
+#         # SIZE = (224, 224)
+#         # MEAN, STD = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
+#         # self.train_trsf = transforms.Compose([
+#         #     transforms.Resize(256, interpolation=InterpolationMode.BICUBIC),
+#         #     transforms.RandomCrop(SIZE[0]),
+#         #     transforms.RandomHorizontalFlip(0.5),
+#         #     transforms.ToTensor(),
+#         #     transforms.Normalize(mean=MEAN, std=STD),
+#         # ])
 
-        # self.test_trsf = transforms.Compose([
-        #     transforms.Resize(size=(256, 256), interpolation=InterpolationMode.BICUBIC),
-        #     transforms.CenterCrop(SIZE[0]),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize(mean=MEAN, std=STD),
-        # ])
+#         # self.test_trsf = transforms.Compose([
+#         #     transforms.Resize(size=(256, 256), interpolation=InterpolationMode.BICUBIC),
+#         #     transforms.CenterCrop(SIZE[0]),
+#         #     transforms.ToTensor(),
+#         #     transforms.Normalize(mean=MEAN, std=STD),
+#         # ])
 
 
-        # self.class_order = np.arange(7).tolist()
-        self.class_order = np.arange(6).tolist()
+#         # self.class_order = np.arange(7).tolist()
+#         self.class_order = np.arange(6).tolist()
         
-        # self.class_names = ['melanoma',
-        #                     'melanocytic nevus',
-        #                     'basal cell carcinoma',
-        #                     'actinic keratosis or intraepithelial carcinoma',
-        #                     'benign keratosis',
-        #                     'dermatofibroma',
-        #                     'vascular skin lesion']
-        self.class_names = ['melanoma',
-                            'basal cell carcinoma',
-                            'actinic keratosis or intraepithelial carcinoma',
-                            'benign keratosis',
-                            'dermatofibroma',
-                            'vascular skin lesion']
+#         # self.class_names = ['melanoma',
+#         #                     'melanocytic nevus',
+#         #                     'basal cell carcinoma',
+#         #                     'actinic keratosis or intraepithelial carcinoma',
+#         #                     'benign keratosis',
+#         #                     'dermatofibroma',
+#         #                     'vascular skin lesion']
+#         self.class_names = ['melanoma',
+#                             'basal cell carcinoma',
+#                             'actinic keratosis or intraepithelial carcinoma',
+#                             'benign keratosis',
+#                             'dermatofibroma',
+#                             'vascular skin lesion']
         
-    def download_data(self):
-        # assert 0, "You should specify the folder of your dataset"
-        # train_dir = "./data/cub/train/"
-        # test_dir = "./data/cub/test/"
-        from utils.isic_loader import Isic
+#     def download_data(self):
+#         # assert 0, "You should specify the folder of your dataset"
+#         # train_dir = "./data/cub/train/"
+#         # test_dir = "./data/cub/test/"
+#         from utils.isic_loader import Isic
         
-        if self.args['gadi']:
-            base_dir = './data'
-        else:
-            base_dir = '/data/Datasets'
+#         if self.args['gadi']:
+#             base_dir = './data'
+#         else:
+#             base_dir = '/data/Datasets'
             
-        base_dir = os.path.join(base_dir, 'isic')
+#         base_dir = os.path.join(base_dir, 'isic')
             
-        train_data = Isic(
-            root=base_dir,
-            train=True,
-            # download=True,
-            download=False,
-            # transform=self.train_trsf
-        )
-        test_data = Isic(
-            root=base_dir,
-            train=False,
-            # download=True,
-            download=False,
-            # transform=self.test_trsf
-        )
+#         train_data = Isic(
+#             root=base_dir,
+#             train=True,
+#             # download=True,
+#             download=False,
+#             # transform=self.train_trsf
+#         )
+#         test_data = Isic(
+#             root=base_dir,
+#             train=False,
+#             # download=True,
+#             download=False,
+#             # transform=self.test_trsf
+#         )
         
-        self.train_data, self.train_targets = train_data.data, np.array(
-            train_data.targets
-        )
-        self.test_data, self.test_targets = test_data.data, np.array(
-            test_data.targets
-        )
+#         self.train_data, self.train_targets = train_data.data, np.array(
+#             train_data.targets
+#         )
+#         self.test_data, self.test_targets = test_data.data, np.array(
+#             test_data.targets
+#         )
         
-        # self.train_data = train_data.data
-        # self.train_targets = train_data.targets
-        # self.test_data = test_data.data
-        # self.test_targets = test_data.targets
-        print(self.class_names)
+#         # self.train_data = train_data.data
+#         # self.train_targets = train_data.targets
+#         # self.test_data = test_data.data
+#         # self.test_targets = test_data.targets
+#         print(self.class_names)
         
 
 class Caltech101(iData):

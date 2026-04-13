@@ -5,7 +5,7 @@
 - The implementation of MoE-adapter is referred from [MoE-Adapters4CL](https://github.com/JiazuoYu/MoE-Adapters4CL)
 
 ## Data preparation
-- This dataset requires all dataset to be located in `/data/Datasets/`.
+- This dataset requires all dataset to be located in `/shared/sets/datasets/`.
 - To change data location, please refer to `./utils/data.py`.
 
 ## CLIP-based CL experiments
