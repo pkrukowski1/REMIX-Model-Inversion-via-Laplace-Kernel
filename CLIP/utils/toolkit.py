@@ -28,37 +28,51 @@ def makedirs(path):
 
 
 def accuracy(y_pred, y_true, nb_old, init_cls=10, increment=10):
+    if len(y_pred) == 0 or len(y_true) == 0:
+        return {"total": 0.0, "old": 0.0, "new": 0.0, "by_task": {}}
+        
     assert len(y_pred) == len(y_true), "Data length error."
     all_acc = {}
     all_acc["total"] = np.around(
         (y_pred == y_true).sum() * 100 / len(y_true), decimals=2
     )
 
-    # Grouped accuracy, for initial classes
+    # Initialize the specific key the BaseLearner is looking for
+    all_acc["by_task"] = {}
+
+    # Grouped accuracy, for initial classes (Task 0)
     idxes = np.where(
         np.logical_and(y_true >= 0, y_true < init_cls)
     )[0]
     label = "{}-{}".format(
         str(0).rjust(2, "0"), str(init_cls - 1).rjust(2, "0")
     )
-    all_acc[label] = np.around(
+    acc_val = np.around(
         (y_pred[idxes] == y_true[idxes]).sum() * 100 / len(idxes), decimals=2
-    )
-    # for incremental classes
-    for class_id in range(init_cls, np.max(y_true), increment):
+    ) if len(idxes) > 0 else 0.0
+    
+    all_acc[label] = acc_val
+    all_acc["by_task"]["Task_0"] = acc_val
+
+    # For incremental classes (Task 1, 2, 3...)
+    task_id = 1
+    for class_id in range(init_cls, np.max(y_true) + 1, increment):
         idxes = np.where(
             np.logical_and(y_true >= class_id, y_true < class_id + increment)
         )[0]
         label = "{}-{}".format(
             str(class_id).rjust(2, "0"), str(class_id + increment - 1).rjust(2, "0")
         )
-        all_acc[label] = np.around(
+        acc_val = np.around(
             (y_pred[idxes] == y_true[idxes]).sum() * 100 / len(idxes), decimals=2
-        )
+        ) if len(idxes) > 0 else 0.0
+        
+        all_acc[label] = acc_val
+        all_acc["by_task"][f"Task_{task_id}"] = acc_val
+        task_id += 1
 
     # Old accuracy
     idxes = np.where(y_true < nb_old)[0]
-
     all_acc["old"] = (
         0
         if len(idxes) == 0
@@ -69,8 +83,12 @@ def accuracy(y_pred, y_true, nb_old, init_cls=10, increment=10):
 
     # New accuracy
     idxes = np.where(y_true >= nb_old)[0]
-    all_acc["new"] = np.around(
-        (y_pred[idxes] == y_true[idxes]).sum() * 100 / len(idxes), decimals=2
+    all_acc["new"] = (
+        0 
+        if len(idxes) == 0 
+        else np.around(
+            (y_pred[idxes] == y_true[idxes]).sum() * 100 / len(idxes), decimals=2
+        )
     )
 
     return all_acc
