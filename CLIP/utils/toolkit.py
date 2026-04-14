@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+import torch.optim as optim
 import math
 from collections import OrderedDict
 import copy
@@ -149,7 +150,6 @@ def get_dataset_class_names(base_dir, dataset_name):
     return class_names
 
 
-import torch.optim as optim
 
 def build_optimizer(network, args):
     """
