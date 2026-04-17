@@ -20,6 +20,8 @@ import torch.nn.functional as F
 import shutil
 
 from clip_backbones.moe_clip import create_model_and_transforms
+from inversion.gmrf import LaplaceKernelGMRF
+from inversion.functions import WelfordCovarianceTracker
 from inversion import layer_wise_clip_inversion
 from inversion import feature_stats
 from inversion import cont_model
@@ -113,6 +115,7 @@ class Learner(BaseLearner):
             train_steps=args['train_steps'],
             alpha_pr=args['alpha_pr'],
             alpha_rf=args['alpha_rf'],
+            alpha_gmrf=args['alpha_gmrf'],
             scheduler_params=None,
             use_rf=True,
             smooth_type='tv',
@@ -201,6 +204,13 @@ class Learner(BaseLearner):
             freeze_module(module=self.old_model)
             self.inv_model = self.old_model.visual
             self.inversion_runner.update_model(model=self.inv_model)
+
+            self.update_buffer_params(
+                train_loader=train_loader,
+                start_class=self._known_classes,
+                end_class=self._total_classes
+            )
+
             # count class distribution.
             if self.args['stat_type'] == 'gmm':
                 # add support for GMM feature modelling
@@ -259,6 +269,126 @@ class Learner(BaseLearner):
                     src_file = os.path.join(buffer_path, fi)
                     dst_file = os.path.join(layer_stats_folder, fi)
                     shutil.copy(src_file, dst_file)
+
+
+    def update_buffer_params(self, train_loader, start_class, end_class, batch_dims_map=None):
+        """
+        Welford GMRF Extraction & Matrix Merging adapted for CLIP layer stats.
+        """
+        # The inversion runner saves stats inside the 'buffer' subfolder
+        stat_file = os.path.join(self.local_path, 'buffer', 'model_input_stats.pkl')
+        if not os.path.exists(stat_file):
+            print("Warning: model_input_stats.pkl not found. Skipping GMRF locking.")
+            return
+            
+        with open(stat_file, 'rb') as fr:
+            name2stat = pickle.load(fr)
+
+        target_names = list(name2stat.keys())
+        
+        print("\n==> Extracting CLIP empirical covariance and locking GMRFs...")
+        
+        trackers = {}
+        for name in target_names:
+            trackers[name] = None 
+
+        hooks = []
+        
+        def make_hook(name):
+            def hook(module, inp, out):
+                x = inp[0].detach()
+                b_dim = batch_dims_map.get(name, 0) if batch_dims_map else 0
+                
+                expected_C = name2stat[name][0].shape[0]
+                
+                if len(x.shape) == 4:
+                    b_dim = 0
+                    C = x.shape[1]
+                else: 
+                    if x.shape[1] == expected_C:
+                        b_dim = 0
+                        C = x.shape[1]
+                    else:
+                        b_dim = 1
+                        C = x.shape[0]
+                
+                if trackers[name] is None:
+                    trackers[name] = WelfordCovarianceTracker(
+                        num_features=C, device=x.device
+                    )
+                    
+                trackers[name].update(x, batch_dim=b_dim)
+            return hook
+
+        # We hook the inv_model (visual encoder) because name2stat is keyed to it
+        for n, m in self.inv_model.named_modules():
+            if n in target_names:
+                hooks.append(m.register_forward_hook(make_hook(n)))
+
+        self.inv_model.eval()
+        with torch.no_grad():
+            for _, inputs, _ in train_loader: 
+                inputs = inputs.to(self._device)
+                _ = self.inv_model(inputs)
+
+        for h in hooks: 
+            h.remove()
+
+        if not hasattr(self, "gmrfs") or self.gmrfs is None:
+            self.gmrfs = torch.nn.ModuleDict()
+
+        n_new = end_class - start_class
+        n_total = end_class
+        ratio_old = (n_total - n_new) / n_total if start_class > 0 else 0.0
+        ratio_new = n_new / n_total if start_class > 0 else 1.0
+
+        for name in target_names:
+            tracker = trackers[name]
+            if tracker is None or tracker.n < 2:
+                continue
+
+            R_curr = tracker.get_correlation_matrix()
+
+            # ModuleDict doesn't allow dots in keys, replace with hyphens
+            safe_name = name.replace(".", "-") 
+            if safe_name not in self.gmrfs:
+                self.gmrfs[safe_name] = LaplaceKernelGMRF(dim=R_curr.shape[0]).to(self._device)
+
+            gmrf = self.gmrfs[safe_name]
+
+            if start_class == 0:
+                R_global = R_curr
+            else:
+                with torch.no_grad():
+                    R_old = gmrf.correlation().detach()
+                R_global = ratio_old * R_old + ratio_new * R_curr
+
+            self._fit_gmrf_correlation(gmrf, R_global)
+
+        self.inv_model.train()
+        print(f"==> Pure Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
+
+        mapped_gmrfs = {k.replace("-", "."): v for k, v in self.gmrfs.items()}
+        self.inversion_runner.gmrfs = mapped_gmrfs 
+
+    def _fit_gmrf_correlation(self, gmrf, target_matrix, epochs=500, lr=0.01):
+        """
+        Uses Adam to fit the GMRF parameters exactly to the explicit Target Matrix.
+        """
+        opt = torch.optim.Adam(gmrf.parameters(), lr=lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
+        
+        gmrf.train()
+        for _ in range(epochs):
+            opt.zero_grad()
+            current_correlation = gmrf.correlation()
+            
+            loss = torch.nn.functional.mse_loss(current_correlation, target_matrix)
+            loss.backward()
+            opt.step()
+            scheduler.step()
+            
+        gmrf.eval()
 
     def _train(self, train_loader, test_loader, tb_logger=None):
         self._network.to(self._device)

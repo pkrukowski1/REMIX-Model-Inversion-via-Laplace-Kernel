@@ -40,6 +40,67 @@ class BNInputHook(object):
         self.module = None
         self.handle.remove()
 
+class DeepInversionLaplaceHook(object):
+    def __init__(self, module, gmrf, running_mean, running_var, batch_dim):
+        self.module = module
+        self.inputs = None
+        self.handle = self.module.register_forward_hook(hook=self.get_input_hook())
+        self.gmrf = gmrf
+        self.batch_dim = batch_dim
+        
+        self.running_mean = running_mean
+        self.running_var = running_var
+
+        with torch.no_grad():
+            R_gmrf = self.gmrf.correlation()
+            
+            bn_var = self.running_var + 1e-5
+            std_bn = torch.sqrt(bn_var)
+            
+            # Reconstruct theoretical covariance: Sigma = std * R * std
+            Sigma = R_gmrf * (std_bn.unsqueeze(1) * std_bn.unsqueeze(0))
+            Sigma = Sigma + torch.eye(Sigma.size(0), device=Sigma.device) * 1e-5
+            
+            self.L = torch.linalg.cholesky(Sigma)
+            self.logdet = 2 * torch.log(torch.diagonal(self.L)).sum()
+            
+            self.precision = torch.cholesky_inverse(self.L).contiguous()
+
+    def nll(self):
+        if self.inputs is None:
+            return torch.tensor(0.0, device=self.gmrf.a.device)
+            
+        if len(self.inputs.shape) == 4:
+            nch = self.inputs.shape[1]
+            value = self.inputs.permute(1, 0, 2, 3).contiguous().view([nch, -1])
+        else:
+            if self.batch_dim == 0:
+                nch = self.inputs.shape[1]
+                value = self.inputs.permute(1, 0, 2).contiguous().view([nch, -1])
+            else:
+                nch = self.inputs.shape[0]
+                value = self.inputs.contiguous().view([nch, -1])
+                
+        N = value.shape[1]
+        
+        diff = value - self.running_mean.view(nch, 1)
+        Sigma_batch = (diff @ diff.T) / N
+        
+        maha = (self.precision * Sigma_batch).sum()
+        loss = 0.5 * (nch * math.log(2 * math.pi) + self.logdet + maha)
+        
+        return loss / nch
+
+    def get_input_hook(self):
+        def hook(module, input, output):
+            self.inputs = input[0]
+        return hook
+
+    def remove_hook(self):
+        self.inputs = None
+        self.module = None
+        self.handle.remove()
+
 
 class ModifiedL2BNInputHook(object):
     def __init__(self, module):
@@ -415,3 +476,59 @@ class SimpleInputAugmentation(torch.nn.Module):
     def reset(self):
         if self.size_change is not None:
             self.pre_scale = DynamicScale(size_change=self.size_change)
+
+class WelfordCovarianceTracker(object):
+    def __init__(self, num_features, device='cuda'):
+        self.n = 0
+        self.mean = torch.zeros(num_features, device=device)
+        self.M2 = torch.zeros((num_features, num_features), device=device)
+        
+    def update(self, x, batch_dim=0):
+        """
+        x: Raw feature maps or tokens from the forward pass.
+        batch_dim: Must match the batch_dim used in CustomBNInputHook for this layer.
+        """
+        if len(x.shape) == 4:
+            # 4D CNN maps: [Batch, Channels, Height, Width] -> [Channels, Batch * H * W]
+            nch = x.shape[1]
+            value = x.permute(1, 0, 2, 3).contiguous().view([nch, -1])
+        else:
+            # 3D ViT Tokens: [Batch, Seq, Channels] or [Seq, Batch, Channels]
+            if batch_dim == 0:
+                nch = x.shape[1]
+                value = x.permute(1, 0, 2).contiguous().view([nch, -1])
+            else:
+                nch = x.shape[0]
+                value = x.contiguous().view([nch, -1])
+                
+        x_flat = value.T 
+        
+        batch_n = x_flat.shape[0]
+        batch_mean = x_flat.mean(dim=0)
+        
+        batch_diff = x_flat - batch_mean
+        batch_M2 = batch_diff.T @ batch_diff
+        
+        new_n = self.n + batch_n
+        delta = batch_mean - self.mean
+        
+        self.mean += delta * (batch_n / new_n)
+        
+        self.M2 += batch_M2 + (delta.unsqueeze(1) @ delta.unsqueeze(0)) * (self.n * batch_n / new_n)
+        self.n = new_n
+
+    def get_correlation_matrix(self):
+        """Returns the final C x C Correlation matrix for GMRF fitting."""
+        if self.n < 2:
+            return None
+        
+        covariance = self.M2 / (self.n - 1)
+        covariance += torch.eye(covariance.shape[0], device=covariance.device) * 1e-5
+        
+        d = torch.diagonal(covariance)
+        std = torch.sqrt(torch.clamp(d, min=1e-5))
+        
+        correlation = covariance / torch.clamp(std.unsqueeze(1) * std.unsqueeze(0), min=1e-5)
+        
+        correlation = correlation - torch.diag(torch.diag(correlation)) + torch.eye(covariance.shape[0], device=covariance.device)
+        return correlation

@@ -668,26 +668,21 @@ class DeepInversionLaplaceHook:
         if self.value.dim() == 4:
             B, C, H, W = self.value.shape
             
-            # 1. Difference from target mean (Broadcasts natively, zero overhead)
             diff = self.value - mu_target.view(1, C, 1, 1)
 
-            # 2. Flatten the spatial dimensions: [B, C, H, W] -> [B, C, H*W]
             diff_flat = diff.reshape(B, C, -1)
 
-            # 3. Compute empirical covariance per image natively
+            # Compute empirical covariance per image natively
             # bmm multiplies [B, C, H*W] by [B, H*W, C] -> resulting in a tiny [B, C, C] tensor
             img_covs = torch.bmm(diff_flat, diff_flat.transpose(1, 2)) / (H * W)
 
-            # 4. Average across the batch -> resulting in a microscopic [C, C] tensor
             Sigma_batch = img_covs.mean(dim=0)
 
         else:
-            # Fallback for 2D inputs (Pooled features / Linear layers)
             B, C = self.value.shape
             diff = self.value - mu_target.view(1, C)
             Sigma_batch = (diff.T @ diff) / B
 
-        # 5. Exact Expected Mahalanobis distance via the Trace trick
         maha = (self.precision * Sigma_batch).sum()
 
         loss = 0.5 * (C * math.log(2 * math.pi) + self.logdet + maha)
