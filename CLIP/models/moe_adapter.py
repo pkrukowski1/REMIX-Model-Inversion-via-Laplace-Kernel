@@ -323,7 +323,6 @@ class Learner(BaseLearner):
         # We hook the inv_model (visual encoder) because name2stat is keyed to it
         for n, m in self.inv_model.named_modules():
             if n in target_names:
-                print("We have a BatchNorm layer match!")
                 hooks.append(m.register_forward_hook(make_hook(n)))
 
         self.inv_model.eval()
