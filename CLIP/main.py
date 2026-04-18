@@ -6,7 +6,7 @@ from trainer import train
 def main():
     args = setup_parser().parse_args()
 
-    cli_args = vars(args).copy()   # ✅ correct
+    cli_args = vars(args).copy()
 
     with open(args.config, 'r') as stream:
         try:
