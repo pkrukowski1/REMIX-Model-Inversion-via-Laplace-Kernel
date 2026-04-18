@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=cl_laplace_kernel_moe_adapter_cifar_10x10
+#SBATCH --job-name=cl_laplace_kernel_moe_adapter_inr_10x20
 #SBATCH --qos=normal
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
@@ -8,7 +8,7 @@
 
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
-BASE_PATH="/shared/results/pkrukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/cifar"
+BASE_PATH="/shared/results/pkrukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/inr"
 LOG_PATH="$BASE_PATH/logs"
 
 mkdir -p "$BASE_PATH"
@@ -27,7 +27,7 @@ for ALPHA in "${ALPHA_GMRF_VALUES[@]}"; do
     mkdir -p "$RUN_PATH"
 
     python3 -u main.py \
-        --config=./configs/moe_adapter/cf100.yaml \
+        --config=./configs/moe_adapter/inr.yaml \
         --seed 1993 \
         --local_path="$RUN_PATH" \
         --alpha_gmrf="$ALPHA"
