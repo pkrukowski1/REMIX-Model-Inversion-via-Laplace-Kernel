@@ -12,9 +12,15 @@ def main():
             exit(0)
 
     args = vars(args)  # Converting argparse Namespace to a dict.
-    args.update(param)  # Add parameters from config file
-    
-    train(args)
+    # config first
+    merged = param.copy()
+
+    # CLI overrides config
+    for k, v in args.items():
+        if v is not None:
+            merged[k] = v
+
+    train(merged)
 
 
 def setup_parser():
@@ -38,7 +44,7 @@ def setup_parser():
     parser.add_argument('--gadi', action='store_true', default=False,
                         help='config on gadi machine')
     parser.add_argument('--local_path', type=str)
-    # parser.add_argument('--alpha_gmrf', type=float)
+    parser.add_argument('--alpha_gmrf', type=float, default=None)
     
     return parser
 
