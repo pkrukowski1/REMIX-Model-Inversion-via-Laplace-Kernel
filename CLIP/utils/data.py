@@ -5,6 +5,8 @@ from torchvision import datasets, transforms
 from torchvision.transforms.functional import InterpolationMode
 from utils.toolkit import split_images_labels, get_dataset_class_names
 from clip_backbones.clip import clip
+from PIL import Image
+from torch.utils.data import Dataset
 import json
 import yaml
 import warnings
@@ -379,7 +381,6 @@ class iImageNetA(iData):
         self.train_data, self.train_targets = split_images_labels(train_dset.imgs)
         self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
 
-
 class CUB(iData):
     def __init__(self, args):
         super().__init__()
@@ -393,33 +394,130 @@ class CUB(iData):
         else:
             self.train_trsf = build_transform(True, args)
             self.test_trsf = build_transform(False, args)
-        self.common_trsf = [
-            # transforms.ToTensor(),
-        ]
-
+            
+        self.common_trsf = []
         self.class_order = np.arange(200).tolist()
-        
         self.class_names = None
 
     def download_data(self):
         if self.args['gadi']:
-            # base_dir = './data/'
             base_dir = os.path.dirname(os.getcwd())
         else:
-            base_dir = '/shared/sets/datasets/'
-        # train_dir = "./data/cub/train/"
-        # test_dir = "./data/cub/test/"
-        train_dir = os.path.join(base_dir, 'cub/train')
-        test_dir = os.path.join(base_dir, 'cub/test')
+            base_dir = '/shared/sets/datasets/cub_200_2011/CUB_200_2011'
 
-        train_dset = datasets.ImageFolder(train_dir)
-        test_dset = datasets.ImageFolder(test_dir)
+        train_dset = CUB200Dataset(root_dir=base_dir, is_train=True, transform=self.train_trsf)
+        test_dset = CUB200Dataset(root_dir=base_dir, is_train=False, transform=self.test_trsf)
 
-        self.train_data, self.train_targets = split_images_labels(train_dset.imgs)
-        self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
+        self.train_data = np.array(train_dset.data)
+        self.train_targets = np.array(train_dset.targets)
         
-        self.class_names = load_json('utils/labels.json')['cub']
-        print(self.class_names)
+        self.test_data = np.array(test_dset.data)
+        self.test_targets = np.array(test_dset.targets)
+        
+        classes_file = os.path.join(base_dir, 'classes.txt')
+        self.class_names = []
+        with open(classes_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split(' ')
+                if len(parts) >= 2:
+                    name = parts[1].replace('_', ' ')
+                    self.class_names.append(name)
+        
+        print(f"CUB Loaded: {len(self.train_data)} train images, {len(self.test_data)} test images.")
+
+# class CUB(iData):
+#     def __init__(self, args):
+#         super().__init__()
+
+#         self.args = args
+#         self.use_path = True
+
+#         if args["model_name"] == "coda_prompt":
+#             self.train_trsf = build_transform_coda_prompt(True, args)
+#             self.test_trsf = build_transform_coda_prompt(False, args)
+#         else:
+#             self.train_trsf = build_transform(True, args)
+#             self.test_trsf = build_transform(False, args)
+#         self.common_trsf = [
+#             # transforms.ToTensor(),
+#         ]
+
+#         self.class_order = np.arange(200).tolist()
+        
+#         self.class_names = None
+
+#     def download_data(self):
+#         if self.args['gadi']:
+#             # base_dir = './data/'
+#             base_dir = os.path.dirname(os.getcwd())
+#         else:
+#             base_dir = '/shared/sets/datasets/'
+#         # train_dir = "./data/cub/train/"
+#         # test_dir = "./data/cub/test/"
+#         train_dir = os.path.join(base_dir, 'cub/train')
+#         test_dir = os.path.join(base_dir, 'cub/test')
+
+#         train_dset = datasets.ImageFolder(train_dir)
+#         test_dset = datasets.ImageFolder(test_dir)
+
+#         self.train_data, self.train_targets = split_images_labels(train_dset.imgs)
+#         self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
+        
+#         self.class_names = load_json('utils/labels.json')['cub']
+#         print(self.class_names)
+
+class CUB200Dataset(Dataset):
+    def __init__(self, root_dir, is_train=True, transform=None):
+        """
+        Custom Dataset for CUB-200-2011 that reads from the original text files
+        without requiring physical folder reorganization.
+        """
+        self.root_dir = root_dir
+        self.is_train = is_train
+        self.transform = transform
+        
+        self.images_dir = os.path.join(root_dir, 'images')
+        images_file = os.path.join(root_dir, 'images.txt')
+        split_file = os.path.join(root_dir, 'train_test_split.txt')
+        labels_file = os.path.join(root_dir, 'image_class_labels.txt')
+        
+        self.img_paths = {}
+        with open(images_file, 'r') as f:
+            for line in f:
+                img_id, path = line.strip().split()
+                self.img_paths[img_id] = path
+                
+        self.img_labels = {}
+        with open(labels_file, 'r') as f:
+            for line in f:
+                img_id, label = line.strip().split()
+                self.img_labels[img_id] = int(label) - 1 
+                
+        self.data = []
+        self.targets = []
+        target_split = '1' if is_train else '0'
+        
+        with open(split_file, 'r') as f:
+            for line in f:
+                img_id, split = line.strip().split()
+                if split == target_split:
+                    full_path = os.path.join(self.images_dir, self.img_paths[img_id])
+                    self.data.append(full_path)
+                    self.targets.append(self.img_labels[img_id])
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        img_path = self.data[idx]
+        target = self.targets[idx]
+        
+        img = Image.open(img_path).convert('RGB')
+        
+        if self.transform is not None:
+            img = self.transform(img)
+            
+        return img, target
         
 
 class TinyIMN(iData):

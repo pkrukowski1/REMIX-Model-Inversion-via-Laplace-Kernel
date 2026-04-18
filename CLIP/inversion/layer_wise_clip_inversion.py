@@ -146,13 +146,15 @@ class LayerWiseCLIPInversion(object):
         self.best_layer_lrs.clear()
         self.best_layer_rfs.clear()
 
+        self._module_id_to_global = {id(m): n for n, m in self.model.named_modules()}
+        
     def register_hooks(self):
         stat_file = os.path.join(self.local_path, 'model_input_stats.pkl')
         if not os.path.exists(stat_file):
             raise ValueError('Input stat file does not exist')
         with open(stat_file, 'rb') as fr:
             name2stat = pickle.load(fr)
-            
+        
         for n, mi in self.model.named_modules():
             if n in name2stat:
                 self.stat_hooks.append(
@@ -163,16 +165,18 @@ class LayerWiseCLIPInversion(object):
                         batch_dim=1  # only transformer blocks
                     )
                 )                
-                if getattr(self, 'gmrfs', None) is not None and n in self.gmrfs:
-                    self.gmrf_hooks.append(
-                        functions.DeepInversionLaplaceHook(
-                            module=mi,
-                            gmrf=self.gmrfs[n],
-                            running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
-                            running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
-                            batch_dim=1
-                        )
+                
+                self.gmrf_hooks.append(
+                    functions.DeepInversionLaplaceHook(
+                        module=mi,
+                        gmrf=self.gmrfs[n],
+                        running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
+                        running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
+                        batch_dim=1
                     )
+                )
+
+                print(f"Stats for {n} matched")
 
     def register_block_hooks(self, block, bid, batch_dim):
         stat_file = os.path.join(self.local_path, 'block_input_stats' + str(bid) + '.pkl')
@@ -180,7 +184,7 @@ class LayerWiseCLIPInversion(object):
             return
         with open(stat_file, 'rb') as fr:
             name2stat = pickle.load(fr)
-            
+
         for n, mi in block.named_modules():
             if n in name2stat:
                 self.stat_hooks.append(
@@ -193,26 +197,28 @@ class LayerWiseCLIPInversion(object):
                 )
                 
                 global_name = self._module_id_to_global.get(id(mi))
-                if getattr(self, 'gmrfs', None) is not None and global_name in self.gmrfs:
-                    self.gmrf_hooks.append(
-                        functions.DeepInversionLaplaceHook(
-                            module=mi,
-                            gmrf=self.gmrfs[global_name],
-                            running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
-                            running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
-                            batch_dim=batch_dim
-                        )
+                
+                self.gmrf_hooks.append(
+                    functions.DeepInversionLaplaceHook(
+                        module=mi,
+                        gmrf=self.gmrfs[global_name],
+                        running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
+                        running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
+                        batch_dim=batch_dim
                     )
+                )
+
+                print(f"Stats for {global_name} matched")
+                
 
     def remove_hooks(self):
         for hi in self.stat_hooks:
             hi.remove_hook()
         self.stat_hooks.clear()
         
-        if hasattr(self, 'gmrf_hooks'):
-            for hi in self.gmrf_hooks:
-                hi.remove_hook()
-            self.gmrf_hooks.clear()
+        for hi in self.gmrf_hooks:
+            hi.remove_hook()
+        self.gmrf_hooks.clear()
 
     def criterion_pr(self, inputs):
         if self.smooth_type == 'tv':
@@ -291,10 +297,10 @@ class LayerWiseCLIPInversion(object):
             else:
                 l_blur = torch.tensor(0, dtype=torch.float32, requires_grad=False)
 
-            if getattr(self, 'gmrf_hooks', None) and len(self.gmrf_hooks) > 0:
+            if len(self.gmrf_hooks) > 0:
                 l_gmrf = torch.stack([h.nll() for h in self.gmrf_hooks]).sum()
             else:
-                l_gmrf = torch.tensor(0.0, device=inputs.device)        
+                l_gmrf = torch.tensor(0, dtype=torch.float32, requires_grad=False)     
 
             l_mse = loss_fn(normed_feat, target_feats)
             if i == 0:
@@ -684,6 +690,7 @@ class LayerWiseCLIPInversion(object):
                     if li in n:
                         tuned = True
                         break
+                
                 if n in name2stat and tuned:
                     self.stat_hooks.append(
                         functions.CustomBNInputHook(
@@ -693,16 +700,19 @@ class LayerWiseCLIPInversion(object):
                             batch_dim=1  # only transformer blocks
                         )
                     )
-                    if getattr(self, 'gmrfs', None) is not None and n in self.gmrfs:
-                        self.gmrf_hooks.append(
-                            functions.DeepInversionLaplaceHook(
-                                module=mi,
-                                gmrf=self.gmrfs[n],
-                                running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
-                                running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
-                                batch_dim=1
-                            )
+
+                    self.gmrf_hooks.append(
+                        functions.DeepInversionLaplaceHook(
+                            module=mi,
+                            gmrf=self.gmrfs[n],
+                            running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
+                            running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
+                            batch_dim=1
                         )
+                    )
+
+                    print(f"Stats for {n} matched")
+
             opt_inputs, best_loss = self.inversion(
                 inputs=inputs, target_feats=target_feats[start:end, :],
                 opt_param=opt_param, size_change=None,

@@ -272,55 +272,67 @@ class Learner(BaseLearner):
 
 
     def update_buffer_params(self, train_loader, start_class, end_class, batch_dims_map=None):
-        """
-        Welford GMRF Extraction & Matrix Merging adapted for CLIP layer stats.
-        """
-        # The inversion runner saves stats inside the 'buffer' subfolder
-        stat_file = os.path.join(self.local_path, 'buffer', 'model_input_stats.pkl')
-        if not os.path.exists(stat_file):
-            print("Warning: model_input_stats.pkl not found. Skipping GMRF locking.")
+        buffer_dir = os.path.join(self.local_path, 'buffer')
+        if not os.path.exists(buffer_dir):
             return
-            
-        with open(stat_file, 'rb') as fr:
-            name2stat = pickle.load(fr)
 
-        target_names = list(name2stat.keys())
+        # 1. Build an exact memory mapping from PyTorch
+        id_to_global = {id(m): n for n, m in self.inv_model.named_modules()}
         
-        print("\n==> Extracting CLIP empirical covariance and locking GMRFs...")
-        
-        trackers = {}
-        for name in target_names:
-            trackers[name] = None 
+        # 2. Recreate the blocks exactly as they were split
+        all_blocks, _ = utils.split_clip_blocks(
+            model=self.inv_model, 
+            normalize=bool(self.args['feat_norm']), 
+            split_cnn=False if self.args['start_block'] == 0 else True
+        )
 
+        unified_name2stat = {}
+
+        # 3. Load top-level stats
+        main_stat_file = os.path.join(buffer_dir, 'model_input_stats.pkl')
+        if os.path.exists(main_stat_file):
+            with open(main_stat_file, 'rb') as fr:
+                unified_name2stat.update(pickle.load(fr))
+
+        # 4. Load block stats using memory address mapping (NOT string hacking)
+        for bid in range(len(all_blocks)):
+            b_file = os.path.join(buffer_dir, f'block_input_stats{bid}.pkl')
+            if os.path.exists(b_file):
+                with open(b_file, 'rb') as fr:
+                    b_stats = pickle.load(fr)
+                    
+                # Match local names in the block to global names
+                for local_name, mi in all_blocks[bid].named_modules():
+                    if local_name in b_stats and local_name != 'total':
+                        global_name = id_to_global.get(id(mi))
+                        if global_name:
+                            unified_name2stat[global_name] = b_stats[local_name]
+
+        target_names = list(unified_name2stat.keys())        
+        print(f"\n==> Extracting CLIP empirical covariance for {len(target_names)} layers...")
+        
+        trackers = {name: None for name in target_names}
         hooks = []
         
         def make_hook(name):
             def hook(module, inp, out):
                 x = inp[0].detach()
                 b_dim = batch_dims_map.get(name, 0) if batch_dims_map else 0
-                
-                expected_C = name2stat[name][0].shape[0]
+                expected_C = unified_name2stat[name][0].shape[0]
                 
                 if len(x.shape) == 4:
-                    b_dim = 0
-                    C = x.shape[1]
+                    b_dim, C = 0, x.shape[1]
                 else: 
                     if x.shape[1] == expected_C:
-                        b_dim = 0
-                        C = x.shape[1]
+                        b_dim, C = 0, x.shape[1]
                     else:
-                        b_dim = 1
-                        C = x.shape[0]
+                        b_dim, C = 1, x.shape[0]
                 
                 if trackers[name] is None:
-                    trackers[name] = WelfordCovarianceTracker(
-                        num_features=C, device=x.device
-                    )
-                    
+                    trackers[name] = WelfordCovarianceTracker(num_features=C, device=x.device)
                 trackers[name].update(x, batch_dim=b_dim)
             return hook
 
-        # We hook the inv_model (visual encoder) because name2stat is keyed to it
         for n, m in self.inv_model.named_modules():
             if n in target_names:
                 hooks.append(m.register_forward_hook(make_hook(n)))
@@ -344,16 +356,16 @@ class Learner(BaseLearner):
 
         for name in target_names:
             tracker = trackers[name]
+            safe_name = name.replace(".", "-") 
+            
+            if safe_name not in self.gmrfs:
+                expected_dim = unified_name2stat[name][0].shape[0]
+                self.gmrfs[safe_name] = LaplaceKernelGMRF(dim=expected_dim).to(self._device)
+                
             if tracker is None or tracker.n < 2:
                 continue
 
             R_curr = tracker.get_correlation_matrix()
-
-            # ModuleDict doesn't allow dots in keys, replace with hyphens
-            safe_name = name.replace(".", "-") 
-            if safe_name not in self.gmrfs:
-                self.gmrfs[safe_name] = LaplaceKernelGMRF(dim=R_curr.shape[0]).to(self._device)
-
             gmrf = self.gmrfs[safe_name]
 
             if start_class == 0:
@@ -369,7 +381,8 @@ class Learner(BaseLearner):
         print(f"==> Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
 
         mapped_gmrfs = {k.replace("-", "."): v for k, v in self.gmrfs.items()}
-        self.inversion_runner.gmrfs = mapped_gmrfs 
+        print(f"Total GMRFs generated and transferred to runner: {len(mapped_gmrfs)}")        
+        self.inversion_runner.gmrfs = mapped_gmrfs
 
     def _fit_gmrf_correlation(self, gmrf, target_matrix, epochs=500, lr=0.01):
         """
