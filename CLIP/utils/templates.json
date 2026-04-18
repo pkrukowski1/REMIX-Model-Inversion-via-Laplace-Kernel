@@ -10,7 +10,7 @@
     "imagenet": ["a photo of a {}."],
     "imagenet100": ["a photo of a {}."],
     "imagenet1000": ["a photo of a {}."],
-    "imagenet-r": ["a photo of a {}."],
+    "imagenetr": ["a photo of a {}."],
     "imagenet-a": ["a photo of a {}."],
     "domainnet": ["a photo of a {}."],
     "ucf101": ["a photo of a person doing {}."],
