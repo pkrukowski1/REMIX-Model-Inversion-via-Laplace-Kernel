@@ -5,22 +5,23 @@ from trainer import train
 
 def main():
     args = setup_parser().parse_args()
+
+    cli_args = vars(args).copy()   # ✅ correct
+
     with open(args.config, 'r') as stream:
         try:
             param = yaml.safe_load(stream)
         except yaml.YAMLError:
             exit(0)
 
-    args = vars(args)  # Converting argparse Namespace to a dict.
-    # config first
-    merged = param.copy()
+    args = vars(args)
+    args.update(param)
 
-    # CLI overrides config
-    for k, v in args.items():
-        if v is not None:
-            merged[k] = v
+    # override only alpha_gmrf from CLI
+    if cli_args.get("alpha_gmrf") is not None:
+        args["alpha_gmrf"] = cli_args["alpha_gmrf"]
 
-    train(merged)
+    train(args)
 
 
 def setup_parser():
@@ -44,7 +45,7 @@ def setup_parser():
     parser.add_argument('--gadi', action='store_true', default=False,
                         help='config on gadi machine')
     parser.add_argument('--local_path', type=str)
-    parser.add_argument('--alpha_gmrf', type=float, default=None)
+    parser.add_argument('--alpha_gmrf', type=float)
     
     return parser
 
