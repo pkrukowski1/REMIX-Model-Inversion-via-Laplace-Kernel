@@ -339,7 +339,10 @@ class LayerWiseCLIPInversion(object):
             if id_bias is not None and self.save_step > 0 and i % self.save_step == 0:
                 save_images(
                     img_batch=inputs.data, out_path=self.local_path, step=i, id_bias=id_bias)
-            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_pr * l_blur.item()
+                
+            gmrf_val = l_gmrf.item() if isinstance(l_gmrf, torch.Tensor) else l_gmrf
+
+            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_pr * l_blur.item() + self.alpha_gmrf * gmrf_val
             if l_in is not None:
                 cmp_loss += self.alpha_rf * l_in.item()
             if best_loss is None or best_loss > cmp_loss:
