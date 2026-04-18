@@ -38,6 +38,7 @@ def setup_parser():
     parser.add_argument('--gadi', action='store_true', default=False,
                         help='config on gadi machine')
     parser.add_argument('--local_path', type=str)
+    # parser.add_argument('--alpha_gmrf', type=float)
     
     return parser
 
