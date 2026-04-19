@@ -22,6 +22,7 @@ conda activate laplace_kernel_in_cl
 
 # Define the array of values
 ALPHA_GMRF_VALUES=(0.0001 0.0005 0.001 0.002 0.005 0.01 0.05)
+# 0.0001 best
 
 # Extract the specific value for THIS specific task using the SLURM array ID
 ALPHA=${ALPHA_GMRF_VALUES[$SLURM_ARRAY_TASK_ID]}
