@@ -72,7 +72,7 @@ class Learner(BaseLearner):
             if "ZS_clip" in k:
                 v.requires_grad_(False)
         print('frozen parameters:', cnt)
-        self.prompt_template = load_json('utils/templates.json')[args['dataset']]
+        # self.prompt_template = load_json('utils/templates.json')[args['dataset']]
 
         self.args = args
         self.epochs = args['tuned_epoch']

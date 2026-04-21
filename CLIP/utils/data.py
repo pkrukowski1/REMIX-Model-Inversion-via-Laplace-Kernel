@@ -343,7 +343,7 @@ class iImageNetR(iData):
             # base_dir = './data/'
             base_dir = os.path.dirname(os.getcwd())
         else:
-            base_dir = '/shared/sets/datasets/'
+            base_dir = '/shared/sets/datasets'
 
         # assert 0, "You should specify the folder of your dataset"
         # train_dir = "./data/imagenet-r/train/"
@@ -357,7 +357,8 @@ class iImageNetR(iData):
         self.train_data, self.train_targets = split_images_labels(train_dset.imgs)
         self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
         
-        self.class_names = get_dataset_class_names(base_dir, 'imagenet-r')
+        # self.class_names = get_dataset_class_names(base_dir, 'imagenet-r')
+        self.class_names = list(load_json('utils/des_imagenetr.json').keys())
         print(self.class_names)
 
 
