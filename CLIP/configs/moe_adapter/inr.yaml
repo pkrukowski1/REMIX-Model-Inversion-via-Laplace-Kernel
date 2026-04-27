@@ -14,7 +14,7 @@ backbone_type: 'ViT-B-16'
 pretrained_weight: 'openai'
 device : [ 0 ]  
 seed : [1993]
-prompt_template: "a bad photo of a {}."
+prompt_template: "itap of a {}."
 save_ckpt: 0  # default 0
 
 batch_size: 64
