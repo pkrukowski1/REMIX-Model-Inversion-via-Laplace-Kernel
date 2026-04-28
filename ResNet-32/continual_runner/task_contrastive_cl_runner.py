@@ -18,7 +18,7 @@ import utils
 
 class TaskClassContrastiveRunner(object):
     def __init__(self, local_path, train_params, dataset, inversion_params, task_dic, buffer_params,
-                 cont_params, ce_mode='local', ckpt=None):
+                 cont_params, ce_mode='local', save_pseudo_samples=True, ckpt=None):
         self.local_path = local_path
         if not os.path.exists(self.local_path):
             os.makedirs(self.local_path)
@@ -33,6 +33,7 @@ class TaskClassContrastiveRunner(object):
         self.cont_params = cont_params
         self.ce_mode = ce_mode
         self.ckpt = ckpt
+        self.save_pseudo_samples = save_pseudo_samples
         # build model
         if ckpt is not None:  # add support for loading checkpoint.
             backbone_file = os.path.join(self.local_path, 'backbone_' + str(ckpt) + '.pkl')
@@ -62,7 +63,8 @@ class TaskClassContrastiveRunner(object):
                 buffer_params=self.buffer_params,
                 eval_epoch=40,
                 relabel_input=False,
-                cont_params=cont_params
+                cont_params=cont_params,
+                save_pseudo_samples=self.save_pseudo_samples
             )
         self.rkd_loss = torch.nn.Identity()
         self.feature_pool = torch.nn.AdaptiveAvgPool2d(1)

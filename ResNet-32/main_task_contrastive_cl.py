@@ -114,7 +114,8 @@ def main(opts):
         task_dic=generator.get_task_dic(),
         ce_mode=opts.ce_mode,
         cont_params=cont_params,
-        ckpt=opts.ckpt if len(opts.ckpt) > 0 else None
+        ckpt=opts.ckpt if len(opts.ckpt) > 0 else None,
+        save_pseudo_samples=opts.save_pseudo_samples
     )
     # continual training
     test_loaders = []
@@ -226,6 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--inv_lr_rate', type=float, default=0.5)
     parser.add_argument('--inv_warmup', type=int, default=0)
     parser.add_argument('--layer_schedule', type=int, default=0)
+    parser.add_argument('--save_pseudo_samples', action='store_true', default=False, help="Save generated images to disk")
     args = parser.parse_args()
 
     print('script\t\t', 'main_task_contrastive_cl.py')
@@ -306,6 +308,7 @@ if __name__ == '__main__':
     print('inv_lr_rate\t\t', args.inv_lr_rate)
     print('inv_warmup\t\t', args.inv_warmup)
     print('layer_schedule\t\t', args.layer_schedule)
+    print('save_pseudo_samples\t\t', args.save_pseudo_samples)
     print('\n')
 
     utils.set_random_seed(seed=args.seed)

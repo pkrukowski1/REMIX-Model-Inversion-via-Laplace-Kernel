@@ -136,6 +136,7 @@ for alpha_gmrf in "${ALPHA_GMRF[@]}"; do
 			--search_param=$search_param \
 			--inv_milestones=$inv_milestones \
 			--inv_lr_rate=$inv_lr_rate \
-			--inv_warmup=$inv_warmup
+			--inv_warmup=$inv_warmup \
+			--save_pseudo_samples
 	done
 done

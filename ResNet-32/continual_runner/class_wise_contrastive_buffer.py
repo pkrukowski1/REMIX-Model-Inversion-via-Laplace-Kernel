@@ -18,7 +18,7 @@ from backbone import vaes
 
 class ClassWiseContrastiveBuffer(object):
     def __init__(self, local_path, teacher_model, dataset, inversion_params, buffer_params,
-                 cont_params, eval_epoch=40, relabel_input=False):
+                 cont_params, eval_epoch=40, relabel_input=False, save_pseudo_samples=True):
         self.local_path = local_path
         if not os.path.exists(self.local_path):
             os.makedirs(self.local_path)
@@ -32,6 +32,7 @@ class ClassWiseContrastiveBuffer(object):
         self.cont_params = cont_params
         self.eval_epoch = eval_epoch
         self.relabel_input = relabel_input
+        self.save_pseudo_samples = save_pseudo_samples
         if dataset == 'seq_cifar100':
             image_size = [3, 32, 32]
         elif dataset == 'seq_tinyimagenet':
@@ -183,6 +184,36 @@ class ClassWiseContrastiveBuffer(object):
             self.train_samples = torch.cat(train_samples, dim=0)
             self.train_labels = torch.cat(train_labels, dim=0)
         print('end generation time:', time.ctime())
+
+        
+        if self.save_pseudo_samples:
+            max_save_per_class = 50 
+            print(f"Saving generated images to disk (Max {max_save_per_class} per class)...")
+            
+            base_dir = os.path.join(self.local_path, f"task_{self.seen_tasks}_synthetic_images")
+            
+            flat_samples = torch.cat(train_samples, dim=0) if isinstance(train_samples, list) else train_samples
+            flat_labels = torch.cat(train_labels, dim=0) if isinstance(train_labels, list) else train_labels
+            
+            for img_tensor, label in zip(flat_samples, flat_labels):
+                label_int = int(label.item())
+                class_dir = os.path.join(base_dir, f"class_{label_int}")
+                os.makedirs(class_dir, exist_ok=True)
+                
+                existing_files = [f for f in os.listdir(class_dir) if f.endswith('.png')]
+                current_count = len(existing_files)
+                
+                if current_count >= max_save_per_class:
+                    continue
+                
+                img_clone = img_tensor.clone().detach().cpu()
+                ch_min = torch.min(torch.min(img_clone, dim=2, keepdim=True)[0], dim=1, keepdim=True)[0]
+                ch_max = torch.max(torch.max(img_clone, dim=2, keepdim=True)[0], dim=1, keepdim=True)[0]
+                img_norm = (img_clone - ch_min) / (ch_max - ch_min + 1e-5)
+                
+                img_path = os.path.join(class_dir, f"img_{current_count}.png")
+                torchvision.utils.save_image(img_norm, img_path)
+
         self.compute_teacher_logit()
 
     def get_data(self, batch_size):
