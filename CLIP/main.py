@@ -46,6 +46,7 @@ def setup_parser():
                         help='config on gadi machine')
     parser.add_argument('--local_path', type=str)
     parser.add_argument('--alpha_gmrf', type=float)
+    parser.add_argument('--save_pseudo_samples', action='store_true', default=False, help="Save generated images to disk")
     
     return parser
 

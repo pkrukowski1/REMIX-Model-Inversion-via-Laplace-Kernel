@@ -79,6 +79,7 @@ class Learner(BaseLearner):
         self.batch_size = args['batch_size']
         self.init_lr = args["init_lr"]
         self.weight_decay = args["weight_decay"] if args["weight_decay"] is not None else 0.0005
+        self.save_pseudo_samples = getattr(args, "save_pseudo_samples", False)
         self.optimizer = None
         self.scheduler = None
         # self.min_lr = args["min_lr"] if args["min_lr"] is not None else 1e-8
@@ -555,7 +556,10 @@ class Learner(BaseLearner):
                             class_weights = class_weights.to(self._device)
                         else:
                             class_weights = torch.ones(self._total_classes).to(self._device)
-                        ft_old_fi = cur_model(mem_sp).detach()
+                        if self.args['start_block'] == 0:
+                            ft_old_fi = self._network.encode_image(mem_sp, normalize=True, is_train=True).detach()
+                        else:
+                            ft_old_fi = cur_model(mem_sp).detach()
                         all_ft = self._network.encode_text(all_texts, normalize=True, is_train=True)
                         old_logit = logit_scale * ft_old_fi @ all_ft.t()
                         loss_ft_old = ft_factor * torch.nn.functional.cross_entropy(old_logit, mem_lab, class_weights)
@@ -909,14 +913,37 @@ class Learner(BaseLearner):
             train_samples.append(gen_img)
             print('finish generating samples:', sample_count)
         train_samples = torch.cat(train_samples, dim=0)
+
         pil_samples = []
+        
         if self.args['start_block'] == 0:
             to_pil = torchvision.transforms.ToPILImage()
-            for i in range(train_samples.shape[0]):
-                pil_samples.append(to_pil(train_samples[i, :]))
+                        
+            if self.save_pseudo_samples:
+                max_save_per_class = 50 
+                base_dir = os.path.join(self.local_path, f"task_{self._cur_task}_synthetic_images")
+                print(f"\n==> Saving synthetic images to disk for Task {self._cur_task}...")
+
+            for i in range(train_samples.shape[0]):                
+                img_pil = to_pil(train_samples[i, :])
+                pil_samples.append(img_pil)
+                
+                if self.save_pseudo_samples:
+                    label = train_labels[i]
+                    label_int = int(label.item() if torch.is_tensor(label) else label)
+                    class_dir = os.path.join(base_dir, f"class_{label_int}")
+                    os.makedirs(class_dir, exist_ok=True)
+                    
+                    current_count = len([f for f in os.listdir(class_dir) if f.endswith('.png')])
+                    
+                    if current_count < max_save_per_class:
+                        img_path = os.path.join(class_dir, f"img_{current_count}.png")
+                        img_pil.save(img_path)
+
         else:
             for i in range(train_samples.shape[0]):
                 pil_samples.append(train_samples[i, :])
+                
         return pil_samples, train_labels
 
     def train_cont_models(self, cls2feats, start_class, end_class):
