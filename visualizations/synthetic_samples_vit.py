@@ -2,11 +2,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-import numpy as np
 import os, glob
 
 from torchvision import transforms
-from torchvision.models import resnet34, ResNet34_Weights
+from torchvision.models import vit_b_16, ViT_B_16_Weights
 from PIL import Image
 from torchvision.transforms.functional import to_pil_image
 
@@ -23,7 +22,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # TARGET_WNID = "n04285008" # Cars
 # TARGET_CLASS_INDEX = 817 # Cars
 # TARGET_WNID = "n01882714" # Koala
-# TARGET_CLASS_INDEX = 105
+# TARGET_CLASS_INDEX = 105 # Koala
 TARGET_WNID = "n03457902" # greenhouse
 TARGET_CLASS_INDEX = 580 # greenhouse
 
@@ -39,11 +38,11 @@ print(f"Running Dreamer on: {DEVICE}")
 # ============================================================
 # 2. MODEL & HOOKS
 # ============================================================
-model = resnet34(weights=ResNet34_Weights.IMAGENET1K_V1).to(DEVICE)
+model = vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1).to(DEVICE)
 model.eval()
 
 for module in model.modules():
-    if isinstance(module, nn.ReLU):
+    if hasattr(module, 'inplace'):
         module.inplace = False
 
 for p in model.parameters(): 
@@ -54,35 +53,40 @@ class FeatureHook:
         self.features = None
         module.register_forward_hook(self.hook_fn)
     def hook_fn(self, module, inp, out): 
-        self.features = out.clone()
+        # ViT output is (B, 197, 768). Drop CLS token (index 0) to keep spatial features.
+        self.features = out[:, 1:, :].clone()
 
-hooks_lcm = {f"layer{i}": FeatureHook(getattr(model, f"layer{i}")) for i in range(1, 5)}
+# Hook into 4 evenly spaced Transformer encoder blocks
+target_blocks = [_ for _ in range(12)]
+hooks_lcm = {f"block{i}": FeatureHook(model.encoder.layers[i]) for i in target_blocks}
 LAYERS = list(hooks_lcm.keys())
 
 with torch.no_grad(): 
     dummy = torch.randn(1, 3, 224, 224).to(DEVICE)
     model(dummy)
 
-layer_dims = {l: hooks_lcm[l].features.numel() // 1 for l in LAYERS}
+layer_dims = {l: hooks_lcm[l].features.size(-1) for l in LAYERS}
 
 
-
-class BNHook:
+# Replaces BNHook to capture and match stats for ViT blocks
+class BlockStatHook:
     def __init__(self, module):
         self.module = module
         self.mean = None
         self.var = None
+        self.target_mean = None
+        self.target_var = None
         module.register_forward_hook(self.hook_fn)
 
     def hook_fn(self, module, inp, out):
-        tmp = inp[0].clone() 
-        self.mean = tmp.mean(dim=(0, 2, 3))
-        self.var = tmp.var(dim=(0, 2, 3), unbiased=False)
+        tmp = out.clone() 
+        # Aggregate over Batch and Sequence dimensions -> (768,)
+        self.mean = tmp.mean(dim=(0, 1))
+        self.var = tmp.var(dim=(0, 1), unbiased=False)
 
-bn_hooks = []
-for module in model.modules():
-    if isinstance(module, nn.BatchNorm2d):
-        bn_hooks.append(BNHook(module))
+stat_hooks = []
+for i in range(12): # ViT-B has 12 encoder blocks
+    stat_hooks.append(BlockStatHook(model.encoder.layers[i]))
 
 # ============================================================
 # 3. LCM MODULE & HELPER FUNCTIONS & INIT
@@ -228,7 +232,7 @@ def diversity_loss(features):
     batch_size = features.size(0)
     if batch_size <= 1: 
         return torch.tensor(0.0).to(DEVICE)
-    f = F.normalize(features.view(batch_size, -1), p=2, dim=1)
+    f = F.normalize(features.reshape(batch_size, -1), p=2, dim=1)
     cosine_sim = torch.mm(f, f.t())
     mask = torch.eye(batch_size).to(DEVICE)
     return (cosine_sim * (1 - mask)).sum() / (batch_size * (batch_size - 1))
@@ -246,23 +250,38 @@ loader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=True)
 target_means_lcm = {} 
 target_vars_lcm = {}
 
+# Initialize lists to capture block statistics
+for h in stat_hooks:
+    h.all_means = []
+    h.all_vars = []
+
 with torch.no_grad():
     all_f = {l: [] for l in LAYERS}
     for x in loader:
         model(x.to(DEVICE))
         for l in LAYERS: 
-            all_f[l].append(hooks_lcm[l].features.view(x.size(0), -1).cpu())
+            all_f[l].append(hooks_lcm[l].features.cpu())
+        for h in stat_hooks:
+            h.all_means.append(h.mean.cpu())
+            h.all_vars.append(h.var.cpu())
     
     for l in LAYERS:
-        f_cat = torch.cat(all_f[l], dim=0)
+        f_cat = torch.cat(all_f[l], dim=0).reshape(-1, layer_dims[l])
+        
         target_means_lcm[l] = f_cat.mean(0).to(DEVICE)
-        target_vars_lcm[l] = f_cat.var(0).to(DEVICE)
+        target_vars_lcm[l] = f_cat.var(0, unbiased=False).to(DEVICE)
         lcms[l].mu = target_means_lcm[l].unsqueeze(0)
+        
+    for h in stat_hooks:
+        h.target_mean = torch.stack(h.all_means).mean(dim=0).to(DEVICE)
+        h.target_var = torch.stack(h.all_vars).mean(dim=0).to(DEVICE)
+        del h.all_means
+        del h.all_vars
 
 # ============================================================
 # 4. TRAIN OR LOAD LCM
 # ============================================================
-LCM_PATH = f"./lcm_resnet34_{TARGET_WNID}.pth"
+LCM_PATH = f"./lcm_vit_b16_{TARGET_WNID}.pth"
 if os.path.exists(LCM_PATH):
     print(f"\n--- LCM parameters loaded from {LCM_PATH} ---")
     ckpt = torch.load(LCM_PATH, map_location=DEVICE)
@@ -286,9 +305,9 @@ else:
                 model(x)
             
             for l in LAYERS:
-                f = hooks_lcm[l].features.view(x.size(0), -1)
+                f = hooks_lcm[l].features.reshape(-1, layer_dims[l])
                 
-                V_feat = f - lcms[l].mu 
+                V_feat = f - lcms[l].mu
                 
                 opts[l].zero_grad()
                 u = F.softplus(lcms[l].u_raw) + 1e-5
@@ -296,7 +315,7 @@ else:
                 frob = frobenius_dist_reduced(u, lcms[l].a, lcms[l].w, V_feat)
                 
                 D = layer_dims[l]
-                loss = frob / (D ** 2) 
+                loss = frob / D 
                 
                 loss.backward()
                 opts[l].step()
@@ -320,12 +339,12 @@ W_CE = 1.0
 W_BN = 1.0
 # NOTE: Change to 0 to not use REMIX
 W_LCM = 5.0
-W_TV = 0.1
+W_TV = 1.0
 W_DIV = 0.0
 
 configs = [
-    {'size': 112, 'iters': 1000, 'lr': 0.05},
-    {'size': 224, 'iters': 2000, 'lr': 0.02},
+    {'size': 112, 'iters': 2000, 'lr': 0.05},
+    {'size': 224, 'iters': 3000, 'lr': 0.02},
 ]
 
 target_label = torch.full((DREAM_BATCH_SIZE,), TARGET_CLASS_INDEX, dtype=torch.long, device=DEVICE)
@@ -357,34 +376,40 @@ for cfg in configs:
         if step < (cfg['iters'] // 2) and step % 15 == 0:
             param.data = F.avg_pool2d(param.data, kernel_size=3, stride=1, padding=1)
 
-        sx, sy = np.random.randint(-3, 4, 2)
-        img_roll = torch.roll(param, shifts=(sx, sy), dims=(2, 3))
+        # sx, sy = np.random.randint(-3, 4, 2)
+        # img_roll = torch.roll(param, shifts=(sx, sy), dims=(2, 3))
         
+        img_roll = param
+
         img_aug = aug(img_roll)
-        img_input = F.interpolate(img_aug, size=(224, 224), mode='bilinear', align_corners=False)
+        img_input = F.interpolate(img_aug, size=(224, 224), mode='bilinear', align_corners=False, antialias=True)
         
         img_norm = (img_input - MEAN) / STD
         logits = model(img_norm)
         
         loss_ce = F.cross_entropy(logits, target_label)
         
-        loss_bn = sum((h.mean - h.module.running_mean).pow(2).mean() + 
-                      (h.var - h.module.running_var).pow(2).mean() for h in bn_hooks)
+        # Matches ViT block statistics against targets (replacing BNHook)
+        loss_bn = sum((h.mean - h.target_mean).pow(2).mean() + 
+                      (h.var - h.target_var).pow(2).mean() for h in stat_hooks)
             
         loss_lcm = 0.0
-        for l in LAYERS:
-            f = hooks_lcm[l].features.view(DREAM_BATCH_SIZE, -1)
+        if W_LCM > 0:
+            for l in LAYERS:
+                f = hooks_lcm[l].features.reshape(-1, layer_dims[l])
+                
+                loss_lcm += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
+                loss_lcm += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
+                loss_lcm += (lcms[l].nll(f) / layer_dims[l])
+        else:
+            loss_lcm = torch.tensor(0.0, device=DEVICE)
             
-            loss_lcm += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
-            loss_lcm += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
-            loss_lcm += (lcms[l].nll(f) / layer_dims[l])
-            
-        loss_div = diversity_loss(hooks_lcm['layer4'].features)
+        # loss_div = diversity_loss(hooks_lcm['block11'].features)
             
         tv = torch.abs(img_aug[:,:,:,1:] - img_aug[:,:,:,:-1]).mean() + \
              torch.abs(img_aug[:,:,1:,:] - img_aug[:,:,:-1,:]).mean()
 
-        total_loss = W_CE * loss_ce + W_BN * loss_bn + W_LCM * loss_lcm + W_TV * tv + W_DIV * loss_div
+        total_loss = W_CE * loss_ce + W_BN * loss_bn + W_LCM * loss_lcm + W_TV * tv #+ W_DIV * loss_div
 
         total_loss.backward()
         torch.nn.utils.clip_grad_norm_([param], max_norm=1.0)
@@ -412,22 +437,26 @@ optimizer_polish = optim.Adam([current_img], lr=0.005)
 for step in range(400):
     optimizer_polish.zero_grad()
     
-    img_input = F.interpolate(current_img, size=(224, 224), mode='bilinear', align_corners=False)
+    img_input = F.interpolate(current_img, size=(224, 224), mode='bilinear', align_corners=False, antialias=True)
     
     img_norm = (img_input - MEAN) / STD
     logits = model(img_norm)
     
     loss_ce = F.cross_entropy(logits, target_label)
     
-    loss_bn = sum((h.mean - h.module.running_mean).pow(2).mean() + 
-                  (h.var - h.module.running_var).pow(2).mean() for h in bn_hooks)
+    loss_bn = sum((h.mean - h.target_mean).pow(2).mean() + 
+                  (h.var - h.target_var).pow(2).mean() for h in stat_hooks)
         
     loss_lcm = 0.0
-    for l in LAYERS:
-        f = hooks_lcm[l].features.view(DREAM_BATCH_SIZE, -1)
-        loss_lcm += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
-        loss_lcm += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
-        loss_lcm += (lcms[l].nll(f) / layer_dims[l])
+    if W_LCM > 0:
+        for l in LAYERS:
+            f = hooks_lcm[l].features.reshape(-1, layer_dims[l])
+            
+            loss_lcm += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
+            loss_lcm += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
+            loss_lcm += (lcms[l].nll(f) / layer_dims[l])
+    else:
+        loss_lcm = torch.tensor(0.0, device=DEVICE)
         
     tv = torch.abs(current_img[:,:,:,1:] - current_img[:,:,:,:-1]).mean() + \
          torch.abs(current_img[:,:,1:,:] - current_img[:,:,:-1,:]).mean()
@@ -452,7 +481,7 @@ for step in range(400):
 with torch.no_grad():
     out = current_img.cpu()
 
-output_folder = "deep_inversion_greenhouse"
+output_folder = "vit_baseline_greenhouse"
 
 os.makedirs(output_folder, exist_ok=True)
 
