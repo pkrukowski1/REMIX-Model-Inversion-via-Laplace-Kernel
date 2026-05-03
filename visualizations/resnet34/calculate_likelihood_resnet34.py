@@ -30,8 +30,7 @@ TARGET_WNIDS = [
 
 BASE_DATA_DIR = "/shared/sets/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/"
 STATS = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-LCM_EPOCHS = 50
-NUM_BATCHES_TO_EXTRACT = 25 # Mieszamy wszystkie klasy
+LCM_EPOCHS = 100
 
 print(f"Running LCM Fitting and Log-Likelihood Analysis on 4 Classes on: {DEVICE}")
 
@@ -104,7 +103,7 @@ class LCM(nn.Module):
         x_s = x[:, idx]
         mu_s = self.mu[:, idx]
         
-        u_s = F.softplus(self.u_raw[idx]) + 1e-4
+        u_s = F.softplus(self.u_raw[idx]) + 1e-5
         w_s = self.w[idx] 
         
         dt = (a_s[1:] - a_s[:-1]).clamp(min=1e-6)
@@ -257,8 +256,6 @@ target_vars_lcm = {}
 with torch.no_grad():
     all_f = {l: [] for l in LAYERS}
     for i, x in enumerate(loader):
-        if i >= NUM_BATCHES_TO_EXTRACT:
-            break
         model(x.to(DEVICE))
         for l in LAYERS: 
             all_f[l].append(hooks_lcm[l].features.view(x.size(0), -1).cpu())
@@ -269,6 +266,12 @@ with torch.no_grad():
         target_vars_lcm[l] = f_cat.var(0, unbiased=False).to(DEVICE) 
         
         lcms[l].mu = target_means_lcm[l].unsqueeze(0)
+        
+        # lcms[l].u_raw.data.fill_(-10.0)
+        # u_initial_contribution = F.softplus(torch.tensor(-10.0, device=DEVICE)) + 1e-5
+        # empirical_var = target_vars_lcm[l]
+        # w_squared = torch.clamp(empirical_var - u_initial_contribution, min=1e-6)
+        # lcms[l].w.data.copy_(torch.sqrt(w_squared))
 
 # ============================================================
 # 5. TRAIN LCM (FROBENIUS) & MEASURE LL
@@ -287,6 +290,16 @@ opts = {l: optim.Adam([
 
 extracted_features_gpu = {l: torch.cat(all_f[l], dim=0).to(DEVICE) for l in LAYERS}
 BATCH_SIZE_FIT = 128
+
+num_samples = extracted_features_gpu['layer1'].size(0)
+batches_per_epoch = math.ceil(num_samples / BATCH_SIZE_FIT)
+TOTAL_STEPS = LCM_EPOCHS * batches_per_epoch
+
+def lr_lambda(step):
+    t = step / TOTAL_STEPS
+    return max(0.9*(1.0 - t)**2 + 0.28, 0.0)
+
+schedulers = {l: optim.lr_scheduler.LambdaLR(opts[l], lr_lambda) for l in LAYERS}
 
 for epoch in range(LCM_EPOCHS):
     epoch_lcm_ll = {l: 0.0 for l in LAYERS}
@@ -311,6 +324,8 @@ for epoch in range(LCM_EPOCHS):
             loss = frob / D
             loss.backward()
             opts[l].step()
+            schedulers[l].step()
+
             total_frob_loss[l] += loss.item()
             
             with torch.no_grad():
@@ -321,18 +336,16 @@ for epoch in range(LCM_EPOCHS):
                 
         batches += 1
 
-    msg = f"LCM Epoch {epoch+1:2d}/{LCM_EPOCHS}"
+    msg = f"Ep {epoch+1:2d}/{LCM_EPOCHS}"
     for l in LAYERS:
         avg_lcm = epoch_lcm_ll[l] / batches
         avg_base = epoch_base_ll[l] / batches
         hist_lcm_ll[l].append(avg_lcm)
         hist_base_ll[l].append(avg_base)
-        if l == 'layer4':
-            msg += f" | L4 Frob: {total_frob_loss[l]/batches:.4f} | LL (LCM): {avg_lcm:,.0f} vs (Base): {avg_base:,.0f}"
+        
+        msg += f" | {l.upper()}: LCM {avg_lcm/1000:,.0f}k (Base {avg_base/1000:,.0f}k)"
     print(msg)
     
-torch.save({l: lcms[l].state_dict() for l in LAYERS}, LCM_PATH)
-
 # ============================================================
 # 6. LL PLOTS
 # ============================================================
@@ -347,16 +360,42 @@ for i, l in enumerate(LAYERS):
     ax.plot(epochs, hist_base_ll[l], linestyle='--', linewidth=2.5, color='#7f8c8d', label='Diagonal Covariance')
     ax.plot(epochs, hist_lcm_ll[l], linestyle='-', linewidth=2.5, color='#e67e22', label='Full Covariance')
     
-    ax.set_title(f'ResNet34 - {l.capitalize()}', fontsize=14, fontweight='bold')
+    # CRITICAL ADDITION: Injecting the total dimensions (D) formatted with commas
+    total_dims = layer_dims[l]
+    ax.set_title(f'ResNet34 - {l.capitalize()} ($D = {total_dims:,}$)', fontsize=14, fontweight='bold')
+    
     ax.set_xlabel('Epoch', fontsize=12)
     ax.set_ylabel('Total Log-Likelihood', fontsize=12)
     ax.grid(True, linestyle=':', alpha=0.7)
+    
+    # Format Y-axis ticks with commas for massive numbers
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
     if i == 0:
         ax.legend(fontsize=12, loc='lower right')
 
 plt.tight_layout()
-os.makedirs("visualizations", exist_ok=True)
-plot_path = "visualizations/log_likelihood_comparison_4_classes.png"
-plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+
+plot_path = "./log_likelihood_comparison_4_classes.pdf"
+plt.savefig(plot_path, dpi=300, bbox_inches='tight', format='pdf')
 print(f"Plots saved to {plot_path}")
+
+# ============================================================
+# 7. EXPORT LL VALUES TO TXT
+# ============================================================
+print("\n--- Exporting Log-Likelihood values to TXT ---")
+txt_path = "./log_likelihood_values_4_classes.txt"
+
+with open(txt_path, "w") as f:
+    header = ["Epoch"]
+    for l in LAYERS:
+        header.extend([f"{l}_Baseline", f"{l}_LCM"])
+    f.write("\t".join(header) + "\n")
+    
+    for epoch in range(LCM_EPOCHS):
+        row = [str(epoch + 1)]
+        for l in LAYERS:
+            row.append(f"{hist_base_ll[l][epoch]:.2f}")
+            row.append(f"{hist_lcm_ll[l][epoch]:.2f}")
+        f.write("\t".join(row) + "\n")
+
+print(f"Log-Likelihood values securely saved to {txt_path}")

@@ -208,3 +208,4 @@ __marimo__/
 
 visualizations/vit/run.sh
 visualizations/resnet34/run.sh
+ablation_study/
