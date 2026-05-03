@@ -56,7 +56,7 @@ class FeatureHook:
         # ViT output is (B, 197, 768). Drop CLS token (index 0) to keep spatial features.
         self.features = out[:, 1:, :].clone()
 
-# Hook into 4 evenly spaced Transformer encoder blocks
+# Hook into spaced Transformer encoder blocks
 target_blocks = [_ for _ in range(12)]
 hooks_lcm = {f"block{i}": FeatureHook(model.encoder.layers[i]) for i in target_blocks}
 LAYERS = list(hooks_lcm.keys())
