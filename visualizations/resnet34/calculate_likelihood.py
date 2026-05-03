@@ -373,7 +373,7 @@ for i, l in enumerate(LAYERS):
     if i == 0:
         ax.legend(fontsize=12, loc='lower right')
 
-plt.tight_layout()
+# plt.tight_layout()
 
 plot_path = "./log_likelihood_comparison_4_classes.pdf"
 plt.savefig(plot_path, dpi=300, bbox_inches='tight', format='pdf')
