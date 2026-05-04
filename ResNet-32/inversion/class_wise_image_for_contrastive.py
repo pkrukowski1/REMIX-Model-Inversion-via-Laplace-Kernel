@@ -185,7 +185,7 @@ class ClassWiseContrastiveInversion(object):
 
             l_gmrf = 0.0
             valid_hooks = 0
-            if gmrf_hooks is not None:
+            if gmrf_hooks is not None and self.alpha_gmrf > 0.0:
                 for hook in gmrf_hooks:
                     if hook.nll is not None:
                         l_gmrf += hook.nll

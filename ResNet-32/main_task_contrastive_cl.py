@@ -3,6 +3,8 @@
 import os
 import argparse
 import pickle
+import time
+from datetime import datetime
 
 from continual_runner import task_contrastive_cl_runner
 from datasets import seq_cifar100
@@ -13,6 +15,9 @@ import utils
 def main(opts):
     if not os.path.exists(opts.local_path):
         os.makedirs(opts.local_path)
+
+    log_file_path = os.path.join(opts.local_path, 'time_log.txt')
+    
     # make dataset
     with open(opts.class_order_file, 'r', encoding='utf8') as fr:
         lines = fr.read().strip().split('\n')
@@ -120,12 +125,16 @@ def main(opts):
     # continual training
     test_loaders = []
     task_accs = []
+    task_times = []
     start_task = 0
     if len(opts.ckpt) > 0:
         start_task = int(opts.ckpt) + 1
         for i in range(start_task):
             train_loader, test_loader = generator.get_task_loaders(task_id=i)
             test_loaders.append(test_loader)
+
+    total_start_time = time.time()
+
     for i in range(start_task, opts.tasks):
         if i == opts.max_task:
             if bool(opts.save_ckpt):
@@ -133,6 +142,10 @@ def main(opts):
             break
         train_loader, test_loader = generator.get_task_loaders(task_id=i)
         test_loaders.append(test_loader)
+
+        task_start_time = time.time()
+        print(f"\n--- Starting Task {i} ---")
+
         if bool(opts.gradual):
             accs = runner.train_single_task(
                 train_loader=train_loader,
@@ -145,9 +158,35 @@ def main(opts):
                 task_id=i,
                 test_loaders=test_loaders
             )
+
+        task_end_time = time.time()
+        task_duration = task_end_time - task_start_time
+        print(f"--- Task {i} completed in {task_duration:.2f} seconds ({task_duration/60:.2f} minutes) ---")
+
         task_accs.append(accs)
         if bool(opts.save_ckpt):
             runner.dump_model(task_id=i)
+
+    total_end_time = time.time()
+    total_duration = total_end_time - total_start_time
+    total_msg = f"Total Continual Learning Time: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)"
+    
+    print(f"\n==================================================")
+    print(total_msg)
+    print(f"==================================================")
+    
+    with open(log_file_path, 'a') as f:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"\n[{timestamp}] Run completed.\n")
+        
+        for msg in task_times:
+            f.write(msg + "\n")
+            
+        f.write(total_msg + "\n")
+        f.write("-" * 50 + "\n")
+        
+    print(f"Timing information appended to: {log_file_path}")
+    
     runner.end_training()
     dump_file = os.path.join(opts.local_path, 'accs.pkl')
     with open(dump_file, 'wb') as fw:

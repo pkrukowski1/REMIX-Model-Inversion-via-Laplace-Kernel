@@ -297,7 +297,7 @@ class LayerWiseCLIPInversion(object):
             else:
                 l_blur = torch.tensor(0, dtype=torch.float32, requires_grad=False)
 
-            if len(self.gmrf_hooks) > 0:
+            if len(self.gmrf_hooks) > 0 and self.alpha_gmrf > 0.0:
                 l_gmrf = torch.stack([h.nll() for h in self.gmrf_hooks]).sum()
             else:
                 l_gmrf = torch.tensor(0, dtype=torch.float32, requires_grad=False)     

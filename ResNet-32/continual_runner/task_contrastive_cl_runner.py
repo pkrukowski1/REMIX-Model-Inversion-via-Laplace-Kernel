@@ -541,33 +541,37 @@ class TaskClassContrastiveRunner(object):
         for h in hooks: 
             h.remove()
 
-        if not hasattr(self, "gmrfs"):
-            self.gmrfs = torch.nn.ModuleList([LaplaceKernelGMRF(m.num_features).to(device) for m in target_modules])
+        if self.inversion_params['alpha_gmrf'] > 0.0:
+            if not hasattr(self, "gmrfs"):
+                self.gmrfs = torch.nn.ModuleList([LaplaceKernelGMRF(m.num_features).to(device) for m in target_modules])
 
-        n_new = end_class - start_class
-        n_total = end_class
-        ratio_old = (n_total - n_new) / n_total if start_class > 0 else 0.0
-        ratio_new = n_new / n_total if start_class > 0 else 1.0
+            n_new = end_class - start_class
+            n_total = end_class
+            ratio_old = (n_total - n_new) / n_total if start_class > 0 else 0.0
+            ratio_new = n_new / n_total if start_class > 0 else 1.0
 
-        for layer_idx, gmrf in enumerate(self.gmrfs):
-            n_total_samples = n_buffers[layer_idx]
-            
-            Sigma_curr = M2_buffers[layer_idx] / (n_total_samples - 1 + 1e-6)
-            Sigma_curr += torch.eye(Sigma_curr.size(0), device=device) * 1e-6 
+            for layer_idx, gmrf in enumerate(self.gmrfs):
+                n_total_samples = n_buffers[layer_idx]
+                
+                Sigma_curr = M2_buffers[layer_idx] / (n_total_samples - 1 + 1e-6)
+                Sigma_curr += torch.eye(Sigma_curr.size(0), device=device) * 1e-6 
 
-            d_curr = torch.diagonal(Sigma_curr)
-            std_curr = torch.sqrt(d_curr)
-            R_curr = Sigma_curr / (std_curr.unsqueeze(1) * std_curr.unsqueeze(0))
-            R_curr.fill_diagonal_(1.0)
+                d_curr = torch.diagonal(Sigma_curr)
+                std_curr = torch.sqrt(d_curr)
+                R_curr = Sigma_curr / (std_curr.unsqueeze(1) * std_curr.unsqueeze(0))
+                R_curr.fill_diagonal_(1.0)
 
-            if start_class == 0:
-                R_global = R_curr
-            else:
-                with torch.no_grad():
-                    R_old = gmrf.correlation().detach()
-                R_global = ratio_old * R_old + ratio_new * R_curr
+                if start_class == 0:
+                    R_global = R_curr
+                else:
+                    with torch.no_grad():
+                        R_old = gmrf.correlation().detach()
+                    R_global = ratio_old * R_old + ratio_new * R_curr
 
-            utils.fit_gmrf_correlation(gmrf, R_global)
+                utils.fit_gmrf_correlation(gmrf, R_global)
+        else:
+            # To ensure it won't be used
+            self.gmrfs = None
 
         self.backbone.train()
         print(f"==> Pure Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
