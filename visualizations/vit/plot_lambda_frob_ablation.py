@@ -1,8 +1,24 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 # ==========================================
-# 1. Input Data (Full Ablation Sweep)
+# 1. Academic Styling (Enhanced Visibility)
+# ==========================================
+sns.set_theme(style="whitegrid")
+
+plt.rcParams.update({
+    "text.usetex": False,
+    "font.family": "serif",
+    "axes.labelweight": "bold", 
+    "axes.labelsize": 14,       
+    "xtick.labelsize": 14,      # Increased tick value size
+    "ytick.labelsize": 14,      # Increased tick value size
+    "legend.fontsize": 12
+})
+
+# ==========================================
+# 2. Input Data (Full Ablation Sweep)
 # ==========================================
 ablation_data = {
     "0.0001": [95.62, 91.10, 85.82, 81.39, 78.44, 75.58, 72.90, 69.86, 68.97, 67.38],
@@ -15,69 +31,70 @@ ablation_data = {
 }
 
 # ==========================================
-# 2. Process Metrics
+# 3. Process Metrics
 # ==========================================
 labels = list(ablation_data.keys())
 curves = list(ablation_data.values())
-tasks = np.arange(1, 11)
 
 last_task_accuracies = [curve[-1] for curve in curves]
 avg_incremental_accuracies = [np.mean(curve) for curve in curves]
 
-# Plotting Settings
 x_indices = np.arange(len(labels))
-width = 0.6
+width = 0.65
 colors = ['#2ecc71', '#3498db', '#9b59b6', '#f39c12', '#e74c3c', '#34495e', '#f1c40f']
 
-# Helper for bar labels
 def autolabel(rects, ax):
+    """Attach a text label above each bar for better data readability."""
     for rect in rects:
         height = rect.get_height()
         ax.annotate(f'{height:.2f}', xy=(rect.get_x() + rect.get_width() / 2, height),
-                    xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', 
-                    fontsize=14, fontweight='bold')
+                    xytext=(0, 4), textcoords="offset points", ha='center', va='bottom', 
+                    fontsize=12, fontweight='bold')
 
-# # --- PLOT 1: Task-to-Task Accuracy Curve (\mathcal{A}_t) ---
-# plt.figure(figsize=(10, 6))
-# for (label, curve), color in zip(ablation_data.items(), colors):
-#     plt.plot(tasks, curve, marker='o', markersize=4, linewidth=2, color=color, label=rf"$\alpha = {label}$")
+# --- PLOT 1: Final Task Accuracy ---
+fig1, ax1 = plt.subplots(figsize=(8, 3.2), dpi=300)
 
-# plt.title('Performance Evolution: Task-to-Task Average Accuracy ($\mathcal{A}_t$)', fontsize=13, fontweight='bold')
-# plt.xlabel('Incremental Task Number ($t$)', fontsize=11)
-# plt.ylabel('Accuracy (%)', fontsize=11)
-# plt.xticks(tasks)
-# plt.grid(True, linestyle=':', alpha=0.6)
-# plt.legend(title="Regularization Weight", bbox_to_anchor=(1.05, 1), loc='upper left')
-# plt.tight_layout()
-# plt.savefig("task_to_task_evolution.pdf", format='pdf')
-# plt.show()
+rects1 = ax1.bar(x_indices, last_task_accuracies, width, color=colors, edgecolor='black', alpha=0.85, zorder=3)
 
-# --- PLOT 2: Last Task Accuracy ---
-fig, ax1 = plt.subplots(figsize=(8, 5))
-rects1 = ax1.bar(x_indices, last_task_accuracies, width, color=colors, edgecolor='black', alpha=0.8)
-ax1.set_title(r'Final Task Accuracy', fontsize=15, fontweight='bold')
+ax1.set_title(r'Final Task Accuracy', fontsize=16, fontweight='bold', pad=15)
+ax1.set_xlabel(r'Regularization Weight ($\lambda_{\text{F}}$)', fontsize=14, labelpad=10)
+ax1.set_ylabel('Accuracy (%)', fontsize=14, labelpad=10)
+
 ax1.set_xticks(x_indices)
 ax1.set_xticklabels(labels)
-ax1.set_ylim(min(last_task_accuracies) - 1, max(last_task_accuracies) + 1.0)
-ax1.grid(axis='y', linestyle=':', alpha=0.6)
+
+y_min1 = min(last_task_accuracies) - 0.2
+y_max1 = max(last_task_accuracies) + 0.3
+ax1.set_ylim(y_min1, y_max1)
+
+ax1.grid(axis='y', linestyle=':', alpha=0.6, zorder=0)
 autolabel(rects1, ax1)
-plt.xticks(fontsize=14)
-plt.yticks(fontsize=14)
+
+sns.despine(fig1)
 plt.tight_layout()
-plt.savefig("last_task_accuracy_ablation.pdf", format='pdf')
+plt.savefig("last_task_accuracy_ablation.pdf", format='pdf', bbox_inches='tight')
 plt.show()
 
-# --- PLOT 3: Average Incremental Accuracy ---
-fig, ax2 = plt.subplots(figsize=(8, 5))
-rects2 = ax2.bar(x_indices, avg_incremental_accuracies, width, color=colors, edgecolor='black', alpha=0.8)
-ax2.set_title('Average Incremental Accuracy', fontsize=15, fontweight='bold')
+# --- PLOT 2: Average Incremental Accuracy ---
+fig2, ax2 = plt.subplots(figsize=(8, 3.2), dpi=300)
+
+rects2 = ax2.bar(x_indices, avg_incremental_accuracies, width, color=colors, edgecolor='black', alpha=0.85, zorder=3)
+
+ax2.set_title('Average Incremental Accuracy', fontsize=16, fontweight='bold', pad=15)
+ax2.set_xlabel(r'Regularization Weight ($\lambda_{\text{F}}$)', fontsize=14, labelpad=10)
+ax2.set_ylabel('Accuracy (%)', fontsize=14, labelpad=10)
+
 ax2.set_xticks(x_indices)
 ax2.set_xticklabels(labels)
-ax2.set_ylim(min(avg_incremental_accuracies) - 0.5, max(avg_incremental_accuracies) + 0.5)
-ax2.grid(axis='y', linestyle=':', alpha=0.6)
+
+y_min2 = min(avg_incremental_accuracies) - 0.15
+y_max2 = max(avg_incremental_accuracies) + 0.3
+ax2.set_ylim(y_min2, y_max2)
+
+ax2.grid(axis='y', linestyle=':', alpha=0.6, zorder=0)
 autolabel(rects2, ax2)
-plt.xticks(fontsize=14)
-plt.yticks(fontsize=14)
+
+sns.despine(fig2)
 plt.tight_layout()
-plt.savefig("average_incremental_accuracy_ablation.pdf", format='pdf')
+plt.savefig("average_incremental_accuracy_ablation.pdf", format='pdf', bbox_inches='tight')
 plt.show()

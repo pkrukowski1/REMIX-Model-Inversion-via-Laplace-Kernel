@@ -70,7 +70,7 @@ def check_gpu_memory():
         mem_inf = None
     return mem_inf
 
-def fit_gmrf_correlation(model_gmrf, R_target, epochs=2000, lr=0.01):
+def fit_gmrf_correlation(model_gmrf, R_target, epochs=200, lr=0.01):
     model_gmrf.train()
     optimizer = torch.optim.Adam([
         model_gmrf.a,
