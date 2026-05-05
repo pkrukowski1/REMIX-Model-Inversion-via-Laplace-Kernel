@@ -8,6 +8,7 @@ from utils.data_manager import DataManager
 from utils.toolkit import count_parameters
 import os
 import gc
+import time
 
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -149,7 +150,11 @@ def _train(args):
 
     cnn_curve, nme_curve = {"top1": [], "top5": []}, {"top1": [], "top5": []}
     forgetting = []
+    total_start_time = time.time()
     for task in range(data_manager.nb_tasks):
+        task_start_time = time.time()
+        logging.info(f"========== Starting Task {task} ==========")
+
         logging.info("All params: {}".format(count_parameters(model._network)))
         logging.info(
             "Trainable params: {}".format(count_parameters(model._network, True))
@@ -206,6 +211,16 @@ def _train(args):
             except:
                 pass
             # print('Forgetting:', compute_fgt(forgetting))
+
+        task_end_time = time.time()
+        task_duration = task_end_time - task_start_time
+        logging.info(f"Task {task} completed in {task_duration:.2f} seconds ({task_duration/60:.2f} minutes)\n")
+
+    total_end_time = time.time()
+    total_duration = total_end_time - total_start_time
+    logging.info("==================================================")
+    logging.info(f"Total Continual Learning Time: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
+    logging.info("==================================================")
 
 
 def _set_device(args):

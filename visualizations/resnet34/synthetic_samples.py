@@ -9,6 +9,8 @@ from torchvision import transforms
 from torchvision.models import resnet34, ResNet34_Weights
 from PIL import Image
 from torchvision.transforms.functional import to_pil_image
+from utils import *
+from lcm import LCM
 
 torch.manual_seed(1)
 
@@ -65,8 +67,6 @@ with torch.no_grad():
 
 layer_dims = {l: hooks_lcm[l].features.numel() // 1 for l in LAYERS}
 
-
-
 class BNHook:
     def __init__(self, module):
         self.module = module
@@ -87,152 +87,6 @@ for module in model.modules():
 # ============================================================
 # 3. LCM MODULE & HELPER FUNCTIONS & INIT
 # ============================================================
-
-class LCM(nn.Module):
-    def __init__(self, dim, eps=1e-6):
-        super().__init__()
-        self.dim = dim
-        self.eps = eps
-
-        self.u_raw = nn.Parameter(torch.zeros(dim))
-        self.w = nn.Parameter(torch.ones(dim) * 0.1)
-        self.a = nn.Parameter(torch.linspace(-1, 1, dim))
-
-        # Will be calculated directly from features
-        self.mu = None
-
-    def laplace_kernel(self):
-        return torch.exp(-torch.abs(self.a[:, None] - self.a[None, :]))
-    
-    def nll(self, x):
-        a_sorted, idx = torch.sort(self.a)
-        x_s = x[:, idx]
-       
-        mu_s = self.mu[:, idx]
-        
-        w_s = torch.clamp(torch.abs(self.w[idx]), min=0.05)
-        z = (x_s - mu_s) / w_s
-        
-        dt = torch.abs(a_sorted[1:] - a_sorted[:-1]).unsqueeze(0) + 1e-6
-        phi = torch.exp(-dt)
-        
-        trans_var = 1.0 - phi**2
-        trans_var = torch.clamp(trans_var, min=0.05)
-        
-        resid = z[:, 1:] - phi * z[:, :-1]
-        
-        std_dev = torch.sqrt(trans_var)
-        loss_trans = torch.log(std_dev) + (torch.abs(resid) / std_dev)
-        loss_0 = torch.abs(z[:, :1])
-        
-        total_nll = (loss_trans.sum(dim=1) + loss_0.sum(dim=1)).mean()
-        return total_nll / x.size(1)
-
-def frobenius_dist_reduced(
-    u: torch.Tensor,          # (n,)
-    a: torch.Tensor,          # (n,)
-    w: torch.Tensor,          # (n,)
-    V: torch.Tensor,          # (B,n)
-):
-    B = V.shape[0]
-
-    term_b = torch.sum(u**2)
-    term_A2_w = xAx_sum(2 * a, w**2)
-    term_bw = 2.0 * torch.sum(u * w**2)
-
-    v_sq_sum = torch.sum(V**2, dim=0)
-    term_bv = -(2.0 / B) * torch.sum(u * v_sq_sum)
-
-    VW = V * w                                 # (B,n)
-    term_Awv = -(2.0 / B) * xAx_sum(a, VW)
-
-    return (
-        term_b
-        + term_A2_w
-        + term_bw
-        + term_bv
-        + term_Awv
-    )
-
-def frobenius_dist(d, a, w, V):
-    B = V.shape[0]
-    return frobenius_dist_reduced(d, a, w, V) + torch.sum(((V.T @ V) / B)**2)
-
-def xAx_sum(a, x):
-    return torch.abs(torch.sum(x * x_A_complex_stable(x, a)))
-
-def x_A_complex_stable(x, a):
-    """
-    Computes A @ x efficiently and stably for Laplace kernel A_ij = exp(-|a_i - a_j|).
-    Uses positive/negative splitting and a noise floor to avoid logcumsumexp NaN gradients.
-    """
-    a_s, perm = torch.sort(a)
-    x_s = x[..., perm]
-
-    alpha = a_s.view(*([1] * (x.dim() - 1)), -1)
-
-    x_pos = F.relu(x_s)
-    x_neg = F.relu(-x_s)
-
-    eps = 1e-8
-    log_x_pos = torch.log(x_pos + eps)
-    log_x_neg = torch.log(x_neg + eps)
-
-    # ----------------------------------------------------
-    # UPPER PART: sum_{j=1}^i exp(a_j - a_i) x_j
-    # ----------------------------------------------------
-    log_terms_pos = log_x_pos + alpha
-    log_terms_neg = log_x_neg + alpha
-
-    log_prefix_pos = torch.logcumsumexp(log_terms_pos, dim=-1)
-    log_prefix_neg = torch.logcumsumexp(log_terms_neg, dim=-1)
-
-    upper_pos = torch.exp(log_prefix_pos - alpha)
-    upper_neg = torch.exp(log_prefix_neg - alpha)
-    upper = upper_pos - upper_neg
-
-    # ----------------------------------------------------
-    # LOWER PART: sum_{j=i+1}^n exp(a_i - a_j) x_j
-    # ----------------------------------------------------
-    log_terms2_pos = log_x_pos - alpha
-    log_terms2_neg = log_x_neg - alpha
-
-    # reverse -> cumsum -> reverse back
-    log_s_pos = torch.flip(torch.logcumsumexp(torch.flip(log_terms2_pos, dims=[-1]), dim=-1), dims=[-1])
-    log_s_neg = torch.flip(torch.logcumsumexp(torch.flip(log_terms2_neg, dims=[-1]), dim=-1), dims=[-1])
-
-    # shift right by 1
-    log_s_shift_pos = torch.empty_like(log_s_pos)
-    log_s_shift_pos[..., :-1] = log_s_pos[..., 1:]
-    log_s_shift_pos[..., -1] = -float('inf')
-
-    log_s_shift_neg = torch.empty_like(log_s_neg)
-    log_s_shift_neg[..., :-1] = log_s_neg[..., 1:]
-    log_s_shift_neg[..., -1] = -float('inf')
-
-    lower_pos = torch.exp(log_s_shift_pos + alpha)
-    lower_neg = torch.exp(log_s_shift_neg + alpha)
-    lower = lower_pos - lower_neg
-
-    # ----------------------------------------------------
-    # COMBINE
-    # ----------------------------------------------------
-    y_s = upper + lower
-
-    inv_perm = torch.argsort(perm)
-    y = y_s[..., inv_perm]
-
-    return y
-
-def diversity_loss(features):
-    batch_size = features.size(0)
-    if batch_size <= 1: 
-        return torch.tensor(0.0).to(DEVICE)
-    f = F.normalize(features.view(batch_size, -1), p=2, dim=1)
-    cosine_sim = torch.mm(f, f.t())
-    mask = torch.eye(batch_size).to(DEVICE)
-    return (cosine_sim * (1 - mask)).sum() / (batch_size * (batch_size - 1))
-
 lcms = {l: LCM(layer_dims[l]).to(DEVICE) for l in LAYERS}
 
 print("LCM's statistics initialization...")
@@ -375,9 +229,11 @@ for cfg in configs:
         for l in LAYERS:
             f = hooks_lcm[l].features.view(DREAM_BATCH_SIZE, -1)
             
-            loss_lcm += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
-            loss_lcm += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
-            loss_lcm += (lcms[l].nll(f) / layer_dims[l])
+            loss_bn += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
+            loss_bn += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
+            
+            if W_LCM > 0.0:
+                loss_lcm += (lcms[l].nll(f) / layer_dims[l])
             
         loss_div = diversity_loss(hooks_lcm['layer4'].features)
             
@@ -395,7 +251,10 @@ for cfg in configs:
             param.clamp_(0.0, 1.0)
 
         if step % 200 == 0:
-            print(f" Step {step:4d} | CE: {loss_ce.item():.2f} | BN: {loss_bn.item():.4f} | NLL: {loss_lcm.item():.2f}")
+            msg = f" Step {step:4d} | CE: {loss_ce.item():.2f} | BN: {loss_bn.item():.4f}"
+            if W_LCM > 0.0:
+                msg += f" | NLL: {loss_lcm.item():.2f}"
+            print(msg)
 
     current_img = param
 
@@ -425,9 +284,11 @@ for step in range(400):
     loss_lcm = 0.0
     for l in LAYERS:
         f = hooks_lcm[l].features.view(DREAM_BATCH_SIZE, -1)
-        loss_lcm += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
-        loss_lcm += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
-        loss_lcm += (lcms[l].nll(f) / layer_dims[l])
+        loss_bn += (f.mean(0) - target_means_lcm[l]).pow(2).mean()
+        loss_bn += (f.var(0) - target_vars_lcm[l]).pow(2).mean()
+
+        if W_LCM > 0.0:
+            loss_lcm += (lcms[l].nll(f) / layer_dims[l])
         
     tv = torch.abs(current_img[:,:,:,1:] - current_img[:,:,:,:-1]).mean() + \
          torch.abs(current_img[:,:,1:,:] - current_img[:,:,:-1,:]).mean()

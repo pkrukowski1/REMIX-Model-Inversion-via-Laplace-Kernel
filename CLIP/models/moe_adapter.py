@@ -28,7 +28,7 @@ from inversion import cont_model
 from inversion import utils
 from inversion import building_blocks
 from inversion import interfence_selection
-
+from utils.toolkit import log_memory_comparison
 
 def load_json(settings_path):
     with open(settings_path) as data_file:
@@ -276,6 +276,13 @@ class Learner(BaseLearner):
         buffer_dir = os.path.join(self.local_path, 'buffer')
         if not os.path.exists(buffer_dir):
             return
+        
+        if self.args['alpha_gmrf'] <= 0.0:
+            print("\n==> Skipping GMRF covariance extraction (alpha_gmrf = 0.0). PMI speed mode!")
+            self.gmrfs = None
+            if hasattr(self, 'inversion_runner'):
+                self.inversion_runner.gmrfs = None
+            return
 
         # 1. Build an exact memory mapping from PyTorch
         id_to_global = {id(m): n for n, m in self.inv_model.named_modules()}
@@ -384,6 +391,7 @@ class Learner(BaseLearner):
         mapped_gmrfs = {k.replace("-", "."): v for k, v in self.gmrfs.items()}
         print(f"Total GMRFs generated and transferred to runner: {len(mapped_gmrfs)}")        
         self.inversion_runner.gmrfs = mapped_gmrfs
+        log_memory_comparison(self.local_path, self.gmrfs)
 
     def _fit_gmrf_correlation(self, gmrf, target_matrix, epochs=500, lr=0.01):
         """

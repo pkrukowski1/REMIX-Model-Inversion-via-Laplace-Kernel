@@ -166,15 +166,16 @@ class LayerWiseCLIPInversion(object):
                     )
                 )                
                 
-                self.gmrf_hooks.append(
-                    functions.DeepInversionLaplaceHook(
-                        module=mi,
-                        gmrf=self.gmrfs[n],
-                        running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
-                        running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
-                        batch_dim=1
+                if self.alpha_gmrf > 0.0 and self.gmrfs is not None:
+                    self.gmrf_hooks.append(
+                        functions.DeepInversionLaplaceHook(
+                            module=mi,
+                            gmrf=self.gmrfs[n],
+                            running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
+                            running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
+                            batch_dim=1
+                        )
                     )
-                )
 
                 print(f"Stats for {n} matched")
 
@@ -198,15 +199,16 @@ class LayerWiseCLIPInversion(object):
                 
                 global_name = self._module_id_to_global.get(id(mi))
                 
-                self.gmrf_hooks.append(
-                    functions.DeepInversionLaplaceHook(
-                        module=mi,
-                        gmrf=self.gmrfs[global_name],
-                        running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
-                        running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
-                        batch_dim=batch_dim
+                if self.alpha_gmrf > 0.0 and self.gmrfs is not None:
+                    self.gmrf_hooks.append(
+                        functions.DeepInversionLaplaceHook(
+                            module=mi,
+                            gmrf=self.gmrfs[global_name],
+                            running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
+                            running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
+                            batch_dim=batch_dim
+                        )
                     )
-                )
 
                 print(f"Stats for {global_name} matched")
                 
@@ -701,15 +703,16 @@ class LayerWiseCLIPInversion(object):
                         )
                     )
 
-                    self.gmrf_hooks.append(
-                        functions.DeepInversionLaplaceHook(
-                            module=mi,
-                            gmrf=self.gmrfs[n],
-                            running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
-                            running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
-                            batch_dim=1
+                    if self.alpha_gmrf > 0.0 and self.gmrfs is not None:
+                        self.gmrf_hooks.append(
+                            functions.DeepInversionLaplaceHook(
+                                module=mi,
+                                gmrf=self.gmrfs[n],
+                                running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
+                                running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
+                                batch_dim=1
+                            )
                         )
-                    )
 
                     print(f"Stats for {n} matched")
 

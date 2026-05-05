@@ -494,90 +494,94 @@ class TaskClassContrastiveRunner(object):
         if self.train_params['use_cuda']:
             self.old_model.cuda()
 
+        if self.inversion_params['alpha_gmrf'] > 0.0:
             if hasattr(self, 'gmrfs') and self.gmrfs is not None:
                 self.gmrfs.cuda()
 
-        print("\n==> Extracting empirical covariance and locking GMRFs...")
-        device = next(self.backbone.parameters()).device
-        
-        target_modules = [m for m in self.backbone.modules() if isinstance(m, torch.nn.BatchNorm2d)]
-        
-        n_buffers = [0] * len(target_modules)
-        mean_buffers = [None] * len(target_modules)
-        M2_buffers = [None] * len(target_modules)
+            print("\n==> Extracting empirical covariance and locking GMRFs...")
+            device = next(self.backbone.parameters()).device
+            
+            target_modules = [m for m in self.backbone.modules() if isinstance(m, torch.nn.BatchNorm2d)]
+            
+            n_buffers = [0] * len(target_modules)
+            mean_buffers = [None] * len(target_modules)
+            M2_buffers = [None] * len(target_modules)
 
-        def make_hook(idx):
-            def hook(module, inp, out):
-                x = inp[0].detach()  
-                C = x.shape[1]
-                x = x.permute(0, 2, 3, 1).reshape(-1, C)
-                B = x.size(0)
-                
-                if mean_buffers[idx] is None:
-                    mean_buffers[idx] = torch.zeros(C, device=device)
-                    M2_buffers[idx] = torch.zeros((C, C), device=device)
+            def make_hook(idx):
+                def hook(module, inp, out):
+                    x = inp[0].detach()  
+                    C = x.shape[1]
+                    x = x.permute(0, 2, 3, 1).reshape(-1, C)
+                    B = x.size(0)
+                    
+                    if mean_buffers[idx] is None:
+                        mean_buffers[idx] = torch.zeros(C, device=device)
+                        M2_buffers[idx] = torch.zeros((C, C), device=device)
 
-                batch_mean = x.mean(dim=0)
-                batch_diff = x - batch_mean
-                batch_M2 = batch_diff.T @ batch_diff
+                    batch_mean = x.mean(dim=0)
+                    batch_diff = x - batch_mean
+                    batch_M2 = batch_diff.T @ batch_diff
 
-                delta = batch_mean - mean_buffers[idx]
-                total_n = n_buffers[idx] + B
+                    delta = batch_mean - mean_buffers[idx]
+                    total_n = n_buffers[idx] + B
 
-                mean_buffers[idx] = mean_buffers[idx] + delta * (B / total_n)
-                M2_buffers[idx] = M2_buffers[idx] + batch_M2 + torch.outer(delta, delta) * (n_buffers[idx] * B / total_n)
-                n_buffers[idx] = total_n
-            return hook
+                    mean_buffers[idx] = mean_buffers[idx] + delta * (B / total_n)
+                    M2_buffers[idx] = M2_buffers[idx] + batch_M2 + torch.outer(delta, delta) * (n_buffers[idx] * B / total_n)
+                    n_buffers[idx] = total_n
+                return hook
 
-        hooks = [m.register_forward_hook(make_hook(i)) for i, m in enumerate(target_modules)]
+            hooks = [m.register_forward_hook(make_hook(i)) for i, m in enumerate(target_modules)]
 
-        self.backbone.eval()
-        with torch.no_grad():
-            for x, _ in train_loader:
-                if self.train_params['use_cuda']:
-                    x = x.cuda()
-                self.backbone(x)
+            self.backbone.eval()
+            with torch.no_grad():
+                for x, _ in train_loader:
+                    if self.train_params['use_cuda']:
+                        x = x.cuda()
+                    self.backbone(x)
 
-        for h in hooks: 
-            h.remove()
+            for h in hooks: 
+                h.remove()
 
-        if self.inversion_params['alpha_gmrf'] > 0.0:
-            if not hasattr(self, "gmrfs"):
-                self.gmrfs = torch.nn.ModuleList([LaplaceKernelGMRF(m.num_features).to(device) for m in target_modules])
+            if self.inversion_params['alpha_gmrf'] > 0.0:
+                if not hasattr(self, "gmrfs"):
+                    self.gmrfs = torch.nn.ModuleList([LaplaceKernelGMRF(m.num_features).to(device) for m in target_modules])
 
-            n_new = end_class - start_class
-            n_total = end_class
-            ratio_old = (n_total - n_new) / n_total if start_class > 0 else 0.0
-            ratio_new = n_new / n_total if start_class > 0 else 1.0
+                n_new = end_class - start_class
+                n_total = end_class
+                ratio_old = (n_total - n_new) / n_total if start_class > 0 else 0.0
+                ratio_new = n_new / n_total if start_class > 0 else 1.0
 
-            for layer_idx, gmrf in enumerate(self.gmrfs):
-                n_total_samples = n_buffers[layer_idx]
-                
-                Sigma_curr = M2_buffers[layer_idx] / (n_total_samples - 1 + 1e-6)
-                Sigma_curr += torch.eye(Sigma_curr.size(0), device=device) * 1e-6 
+                for layer_idx, gmrf in enumerate(self.gmrfs):
+                    n_total_samples = n_buffers[layer_idx]
+                    
+                    Sigma_curr = M2_buffers[layer_idx] / (n_total_samples - 1 + 1e-6)
+                    Sigma_curr += torch.eye(Sigma_curr.size(0), device=device) * 1e-6 
 
-                d_curr = torch.diagonal(Sigma_curr)
-                std_curr = torch.sqrt(d_curr)
-                R_curr = Sigma_curr / (std_curr.unsqueeze(1) * std_curr.unsqueeze(0))
-                R_curr.fill_diagonal_(1.0)
+                    d_curr = torch.diagonal(Sigma_curr)
+                    std_curr = torch.sqrt(d_curr)
+                    R_curr = Sigma_curr / (std_curr.unsqueeze(1) * std_curr.unsqueeze(0))
+                    R_curr.fill_diagonal_(1.0)
 
-                if start_class == 0:
-                    R_global = R_curr
-                else:
-                    with torch.no_grad():
-                        R_old = gmrf.correlation().detach()
-                    R_global = ratio_old * R_old + ratio_new * R_curr
+                    if start_class == 0:
+                        R_global = R_curr
+                    else:
+                        with torch.no_grad():
+                            R_old = gmrf.correlation().detach()
+                        R_global = ratio_old * R_old + ratio_new * R_curr
 
-                utils.fit_gmrf_correlation(gmrf, R_global)
+                    utils.fit_gmrf_correlation(gmrf, R_global)
+
+            self.backbone.train()
+            print(f"==> Pure Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
+
+            self.inv_buffer.generator.gmrfs = copy.deepcopy(self.gmrfs).eval()
+            self.inv_buffer.generator.alpha_gmrf = self.inversion_params.get('alpha_gmrf', 0.1)
         else:
-            # To ensure it won't be used
+            print("\n==> Skipping GMRF covariance extraction (alpha_gmrf = 0.0). PMI speed mode!")
             self.gmrfs = None
-
-        self.backbone.train()
-        print(f"==> Pure Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
-
-        self.inv_buffer.generator.gmrfs = copy.deepcopy(self.gmrfs).eval()
-        self.inv_buffer.generator.alpha_gmrf = self.inversion_params.get('alpha_gmrf', 0.1)
+            if hasattr(self.inv_buffer, 'generator'):
+                self.inv_buffer.generator.gmrfs = None
+                self.inv_buffer.generator.alpha_gmrf = 0.0
 
         # compute class mean and std for current task.
         cur_cls2mean, cur_cls2std = cl_functions.get_class_wise_distribution(
@@ -603,6 +607,7 @@ class TaskClassContrastiveRunner(object):
             all_cls2mean[ci] = cur_cls2mean[ci]
             all_cls2std[ci] = cur_cls2std[ci]
         self.inv_buffer.update_buffer(teacher_model=self.old_model, train_loader=train_loader)
+        utils.log_memory_comparison(self.local_path, self.gmrfs)
 
     def prepare_before_training(self, task_id):
         self.inv_buffer.generate_data_by_selection(

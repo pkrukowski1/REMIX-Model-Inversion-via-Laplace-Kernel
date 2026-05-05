@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import math
+from datetime import datetime
 from collections import OrderedDict
 import copy
 
@@ -220,3 +221,39 @@ def cosine_lr(optimizer, init_lr, warmup_iters, total_iters):
         return new_lr 
         
     return step
+
+def log_memory_comparison(local_path, gmrfs):
+    if gmrfs is None:
+        print("==> GMRFs not initialized. Skipping memory log.")
+        return
+
+    log_path = os.path.join(local_path, "memory_comparison.txt")
+    
+    total_gmrf_bytes = 0
+    total_dense_bytes = 0
+    
+    modules = gmrfs.values() if isinstance(gmrfs, torch.nn.ModuleDict) else gmrfs
+
+    for gmrf in modules:
+        layer_gmrf_bytes = sum(p.numel() * p.element_size() for p in gmrf.parameters())
+        total_gmrf_bytes += layer_gmrf_bytes
+        
+        C = gmrf.a.numel()
+        element_size = gmrf.a.element_size() 
+        total_dense_bytes += (C * C) * element_size
+
+    gmrf_mb = total_gmrf_bytes / (1024 ** 2)
+    dense_mb = total_dense_bytes / (1024 ** 2)
+    ratio = total_dense_bytes / total_gmrf_bytes if total_gmrf_bytes > 0 else 0
+
+    with open(log_path, "a") as f:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        f.write(f"\n[{timestamp}] Memory Comparison Report\n")
+        f.write(f"GMRF total memory (actual): {gmrf_mb:.4f} MB\n")
+        f.write(f"Dense Covariance total memory (theoretical): {dense_mb:.2f} MB\n")
+        f.write(f"Memory reduction factor: {ratio:.1f}x\n")
+        f.write("-" * 45 + "\n")
+
+    print(f"==> Memory comparison logged. Savings: {ratio:.1f}x smaller than Dense Matrix.")
