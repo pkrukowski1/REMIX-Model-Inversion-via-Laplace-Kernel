@@ -32,7 +32,7 @@ TARGET_CLASS_INDEX = 268  # Dog
 DATA_DIR = f"/shared/sets/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/{TARGET_WNID}"
 
 STATS = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-LCM_EPOCHS = 50
+LCM_EPOCHS = 0
 DREAM_BATCH_SIZE = 50
 
 print(f"Running Dreamer on: {DEVICE}")
@@ -194,7 +194,7 @@ current_img = None
 W_CE = 1.0
 W_BN = 1.0
 # NOTE: Change to 0 to not use REMIX
-W_LCM = 5.0
+W_LCM = 0.0
 W_TV = 1.0
 W_DIV = 0.0
 

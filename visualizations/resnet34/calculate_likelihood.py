@@ -7,10 +7,13 @@ import os, glob
 import math
 import matplotlib.pyplot as plt
 import random
+import time
 
 from torchvision import transforms
 from torchvision.models import resnet34, ResNet34_Weights
 from PIL import Image
+from torch.profiler import profile, ProfilerActivity
+
 from lcm import LCM
 from utils import *
 
@@ -22,7 +25,7 @@ torch.manual_seed(1)
 os.environ["TMPDIR"] = "/tmp" 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Wszystkie 4 klasy 
+# All 4 target classes 
 TARGET_WNIDS = [
     "n02113978", # Dog
     "n04285008", # Cars
@@ -116,12 +119,51 @@ with torch.no_grad():
         target_vars_lcm[l] = f_cat.var(0, unbiased=False).to(DEVICE) 
         
         lcms[l].mu = target_means_lcm[l].unsqueeze(0)
+
+# ============================================================
+# 4.5 MEMORY & THEORETICAL COST CALCULATION
+# ============================================================
+print("\n--- Calculating Memory Statistics ---")
+mem_txt_path = "./memory_flops_report.txt"
+
+with open(mem_txt_path, "w") as f:
+    f.write("=== MEMORY & THEORETICAL COST REPORT ===\n\n")
+    total_lcm_bytes = 0
+    total_dense_bytes = 0
+
+    for l in LAYERS:
+        D = layer_dims[l]
+        # LCM parameters: u_raw, w, a, mu (each is size D, float32 = 4 bytes)
+        lcm_bytes = 4 * D * 4  
+        total_lcm_bytes += lcm_bytes
         
-        # lcms[l].u_raw.data.fill_(-10.0)
-        # u_initial_contribution = F.softplus(torch.tensor(-10.0, device=DEVICE)) + 1e-5
-        # empirical_var = target_vars_lcm[l]
-        # w_squared = torch.clamp(empirical_var - u_initial_contribution, min=1e-6)
-        # lcms[l].w.data.copy_(torch.sqrt(w_squared))
+        # Dense Covariance: DxD matrix + D mean vector (float32 = 4 bytes)
+        dense_bytes = ((D * D) + D) * 4 
+        total_dense_bytes += dense_bytes
+        
+        ratio = dense_bytes / lcm_bytes if lcm_bytes > 0 else 0
+        f.write(f"{l.upper()} (D={D:,}):\n")
+        f.write(f"  LCM Memory:   {lcm_bytes / 1024:.2f} KB\n")
+        
+        if dense_bytes > 1024**3:
+            f.write(f"  Dense Memory: {dense_bytes / (1024**3):.2f} GB\n")
+        else:
+            f.write(f"  Dense Memory: {dense_bytes / (1024**2):.2f} MB\n")
+            
+        f.write(f"  Savings:      {ratio:,.1f}x smaller\n\n")
+
+    overall_ratio = total_dense_bytes / total_lcm_bytes if total_lcm_bytes > 0 else 0
+    f.write(f"TOTAL LCM MEMORY:   {total_lcm_bytes / 1024:.2f} KB\n")
+    
+    if total_dense_bytes > 1024**3:
+        f.write(f"TOTAL DENSE MEMORY: {total_dense_bytes / (1024**3):.2f} GB\n")
+    else:
+        f.write(f"TOTAL DENSE MEMORY: {total_dense_bytes / (1024**2):.2f} MB\n")
+        
+    f.write(f"OVERALL SAVINGS:    {overall_ratio:,.1f}x smaller\n")
+    f.write("-" * 50 + "\n")
+
+print(f"Memory statistics saved to {mem_txt_path}")
 
 # ============================================================
 # 5. TRAIN LCM (FROBENIUS) & MEASURE LL
@@ -151,50 +193,115 @@ def lr_lambda(step):
 
 schedulers = {l: optim.lr_scheduler.LambdaLR(opts[l], lr_lambda) for l in LAYERS}
 
-for epoch in range(LCM_EPOCHS):
-    epoch_lcm_ll = {l: 0.0 for l in LAYERS}
-    epoch_base_ll = {l: 0.0 for l in LAYERS}
-    total_frob_loss = {l: 0.0 for l in LAYERS}
-    batches = 0
-    
-    num_samples = extracted_features_gpu['layer1'].size(0)
-    indices = torch.randperm(num_samples)
-    
-    for start_idx in range(0, num_samples, BATCH_SIZE_FIT):
-        batch_idx = indices[start_idx:start_idx + BATCH_SIZE_FIT]
-        
-        for l in LAYERS:
-            f = extracted_features_gpu[l][batch_idx]
-            V_feat = f - lcms[l].mu 
-            D = layer_dims[l]
-            
-            opts[l].zero_grad()
-            u = F.softplus(lcms[l].u_raw) + 1e-5
-            frob = frobenius_dist_reduced(u, lcms[l].a, lcms[l].w, V_feat)
-            loss = frob / D
-            loss.backward()
-            opts[l].step()
-            schedulers[l].step()
+flops_measured = False
+epoch_times = []
+completed_epochs = 0
 
-            total_frob_loss[l] += loss.item()
+try:
+    for epoch in range(LCM_EPOCHS):
+        epoch_start_time = time.time()
+        
+        epoch_lcm_ll = {l: 0.0 for l in LAYERS}
+        epoch_base_ll = {l: 0.0 for l in LAYERS}
+        total_frob_loss = {l: 0.0 for l in LAYERS}
+        batches = 0
+        
+        indices = torch.randperm(num_samples)
+        
+        for start_idx in range(0, num_samples, BATCH_SIZE_FIT):
+            batch_idx = indices[start_idx:start_idx + BATCH_SIZE_FIT]
             
-            with torch.no_grad():
-                l_ll = lcms[l].log_likelihood(f)
-                b_ll = baseline_diagonal_ll(f, target_means_lcm[l], target_vars_lcm[l])
-                epoch_lcm_ll[l] += l_ll.item()
-                epoch_base_ll[l] += b_ll.item()
+            if not flops_measured:
+                print("Profiling FLOPs for the first batch...")
+                with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True, with_flops=True) as prof:
+                    for l in LAYERS:
+                        f = extracted_features_gpu[l][batch_idx]
+                        V_feat = f - lcms[l].mu 
+                        D = layer_dims[l]
+                        
+                        opts[l].zero_grad()
+                        u = F.softplus(lcms[l].u_raw) + 1e-5
+                        frob = frobenius_dist_reduced(u, lcms[l].a, lcms[l].w, V_feat)
+                        loss = frob / D
+                        loss.backward()
+                        opts[l].step()
+                        schedulers[l].step()
+                        
+                        with torch.no_grad():
+                            l_ll = lcms[l].log_likelihood(f)
+                            b_ll = baseline_diagonal_ll(f, target_means_lcm[l], target_vars_lcm[l])
+                            epoch_lcm_ll[l] += l_ll.item()
+                            epoch_base_ll[l] += b_ll.item()
                 
-        batches += 1
+                batch_flops = sum(evt.flops for evt in prof.key_averages() if evt.flops > 0)
+                epoch_flops = batch_flops * batches_per_epoch
+                
+                with open(mem_txt_path, "a") as f_mem:
+                    f_mem.write("\n=== FLOPs COMPUTATION ===\n")
+                    f_mem.write(f"Measured FLOPs per batch: {batch_flops:,}\n")
+                    f_mem.write(f"Estimated FLOPs per epoch ({batches_per_epoch} batches): {epoch_flops:,}\n")
+                    f_mem.write(f"Total FLOPs for {LCM_EPOCHS} epochs: {epoch_flops * LCM_EPOCHS:,}\n")
+                
+                print(f"FLOP profiling complete! Estimated {epoch_flops:,} FLOPs per epoch. Saved to {mem_txt_path}.")
+                flops_measured = True
+                batches += 1
+                continue
 
-    msg = f"Ep {epoch+1:2d}/{LCM_EPOCHS}"
-    for l in LAYERS:
-        avg_lcm = epoch_lcm_ll[l] / batches
-        avg_base = epoch_base_ll[l] / batches
-        hist_lcm_ll[l].append(avg_lcm)
-        hist_base_ll[l].append(avg_base)
+            for l in LAYERS:
+                f = extracted_features_gpu[l][batch_idx]
+                V_feat = f - lcms[l].mu 
+                D = layer_dims[l]
+                
+                opts[l].zero_grad()
+                u = F.softplus(lcms[l].u_raw) + 1e-5
+                frob = frobenius_dist_reduced(u, lcms[l].a, lcms[l].w, V_feat)
+                loss = frob / D
+                loss.backward()
+                opts[l].step()
+                schedulers[l].step()
+
+                total_frob_loss[l] += loss.item()
+                
+                with torch.no_grad():
+                    l_ll = lcms[l].log_likelihood(f)
+                    b_ll = baseline_diagonal_ll(f, target_means_lcm[l], target_vars_lcm[l])
+                    epoch_lcm_ll[l] += l_ll.item()
+                    epoch_base_ll[l] += b_ll.item()
+                    
+            batches += 1
+            
+        epoch_duration = time.time() - epoch_start_time
+        epoch_times.append(epoch_duration)
+        completed_epochs += 1
+
+        msg = f"Ep {epoch+1:2d}/{LCM_EPOCHS} [{epoch_duration:.2f}s]"
+        for l in LAYERS:
+            avg_lcm = epoch_lcm_ll[l] / batches
+            avg_base = epoch_base_ll[l] / batches
+            hist_lcm_ll[l].append(avg_lcm)
+            hist_base_ll[l].append(avg_base)
+            
+            msg += f" | {l.upper()}: LCM {avg_lcm/1000:,.0f}k (Base {avg_base/1000:,.0f}k)"
+        print(msg)
         
-        msg += f" | {l.upper()}: LCM {avg_lcm/1000:,.0f}k (Base {avg_base/1000:,.0f}k)"
-    print(msg)
+        if completed_epochs % 10 == 0:
+            torch.save({l: lcms[l].state_dict() for l in LAYERS}, LCM_PATH)
+            print(f"   -> [Auto-Save] Model weights checkpointed to {LCM_PATH}")
+
+except KeyboardInterrupt:
+    print("\n" + "="*60)
+    print(f"[!] Training interrupted by user at Epoch {completed_epochs + 1}!")
+    print("[!] Breaking the loop safely. Generating plots and saving current data...")
+    print("="*60 + "\n")
+    torch.save({l: lcms[l].state_dict() for l in LAYERS}, LCM_PATH)
+
+if len(epoch_times) > 0:
+    avg_epoch_time = np.mean(epoch_times[1:]) if len(epoch_times) > 1 else epoch_times[0]
+    with open(mem_txt_path, "a") as f_mem:
+        f_mem.write("\n=== TIMING REPORT ===\n")
+        f_mem.write(f"Total training time: {sum(epoch_times):.2f} seconds\n")
+        f_mem.write(f"Average time per epoch (excluding epoch 1 profiler overhead): {avg_epoch_time:.2f} seconds\n")
+        f_mem.write("-" * 50 + "\n")
     
 # ============================================================
 # 6. LL PLOTS
@@ -205,12 +312,11 @@ axes = axes.flatten()
 
 for i, l in enumerate(LAYERS):
     ax = axes[i]
-    epochs = np.arange(1, LCM_EPOCHS + 1)
+    epochs_x = np.arange(1, completed_epochs + 1)
     
-    ax.plot(epochs, hist_base_ll[l], linestyle='--', linewidth=2.5, color='#7f8c8d', label='Diagonal Covariance')
-    ax.plot(epochs, hist_lcm_ll[l], linestyle='-', linewidth=2.5, color='#e67e22', label='Full Covariance')
+    ax.plot(epochs_x, hist_base_ll[l][:completed_epochs], linestyle='--', linewidth=2.5, color='#7f8c8d', label='Diagonal Covariance')
+    ax.plot(epochs_x, hist_lcm_ll[l][:completed_epochs], linestyle='-', linewidth=2.5, color='#e67e22', label='Full Covariance')
     
-    # CRITICAL ADDITION: Injecting the total dimensions (D) formatted with commas
     total_dims = layer_dims[l]
     ax.set_title(f'ResNet34 - {l.capitalize()} ($D = {total_dims:,}$)', fontsize=14, fontweight='bold')
     
@@ -218,12 +324,9 @@ for i, l in enumerate(LAYERS):
     ax.set_ylabel('Total Log-Likelihood', fontsize=12)
     ax.grid(True, linestyle=':', alpha=0.7)
     
-    # Format Y-axis ticks with commas for massive numbers
     ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format(int(x), ',')))
     if i == 0:
         ax.legend(fontsize=12, loc='lower right')
-
-# plt.tight_layout()
 
 plot_path = "./log_likelihood_comparison_4_classes.pdf"
 plt.savefig(plot_path, dpi=300, bbox_inches='tight', format='pdf')
@@ -241,7 +344,7 @@ with open(txt_path, "w") as f:
         header.extend([f"{l}_Baseline", f"{l}_LCM"])
     f.write("\t".join(header) + "\n")
     
-    for epoch in range(LCM_EPOCHS):
+    for epoch in range(completed_epochs):
         row = [str(epoch + 1)]
         for l in LAYERS:
             row.append(f"{hist_base_ll[l][epoch]:.2f}")
