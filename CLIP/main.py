@@ -17,9 +17,9 @@ def main():
     args = vars(args)
     args.update(param)
 
-    # override only alpha_gmrf from CLI
-    if cli_args.get("alpha_gmrf") is not None:
-        args["alpha_gmrf"] = cli_args["alpha_gmrf"]
+    # override only alpha_frob from CLI
+    if cli_args.get("alpha_frob") is not None:
+        args["alpha_frob"] = cli_args["alpha_frob"]
 
     train(args)
 
@@ -45,7 +45,7 @@ def setup_parser():
     parser.add_argument('--gadi', action='store_true', default=False,
                         help='config on gadi machine')
     parser.add_argument('--local_path', type=str)
-    parser.add_argument('--alpha_gmrf', type=float)
+    parser.add_argument('--alpha_frob', type=float)
     parser.add_argument('--save_pseudo_samples', action='store_true', default=False, help="Save generated images to disk")
     
     return parser

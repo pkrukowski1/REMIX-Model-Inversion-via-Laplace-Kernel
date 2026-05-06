@@ -50,7 +50,7 @@ class ClassWiseContrastiveBuffer(object):
             train_steps=self.inversion_params['train_steps'],
             alpha_pr=self.inversion_params['alpha_pr'],
             alpha_rf=self.inversion_params['alpha_rf'],
-            alpha_gmrf=self.inversion_params.get('alpha_gmrf', 0.1),
+            alpha_frob=self.inversion_params.get('alpha_frob', 0.1),
             local_path=os.path.join(self.local_path, 'generator'),
             flip_rate=0 if 'flip_rate' not in self.inversion_params else self.inversion_params['flip_rate'],
             scheduler_params=self.inversion_params['scheduler_params'],

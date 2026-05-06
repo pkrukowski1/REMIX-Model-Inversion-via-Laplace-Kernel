@@ -116,7 +116,7 @@ class Learner(BaseLearner):
             train_steps=args['train_steps'],
             alpha_pr=args['alpha_pr'],
             alpha_rf=args['alpha_rf'],
-            alpha_gmrf=args['alpha_gmrf'],
+            alpha_frob=args['alpha_frob'],
             scheduler_params=None,
             use_rf=True,
             smooth_type='tv',
@@ -277,8 +277,8 @@ class Learner(BaseLearner):
         if not os.path.exists(buffer_dir):
             return
         
-        if self.args['alpha_gmrf'] <= 0.0:
-            print("\n==> Skipping GMRF covariance extraction (alpha_gmrf = 0.0). PMI speed mode!")
+        if self.args['alpha_frob'] <= 0.0:
+            print("\n==> Skipping GMRF covariance extraction (alpha_frob = 0.0). PMI speed mode!")
             self.gmrfs = None
             if hasattr(self, 'inversion_runner'):
                 self.inversion_runner.gmrfs = None
@@ -393,7 +393,7 @@ class Learner(BaseLearner):
         self.inversion_runner.gmrfs = mapped_gmrfs
         log_memory_comparison(self.local_path, self.gmrfs)
 
-    def _fit_gmrf_correlation(self, gmrf, target_matrix, epochs=500, lr=0.01):
+    def _fit_gmrf_correlation(self, gmrf, target_matrix, epochs=200, lr=0.01):
         """
         Uses Adam to fit the GMRF parameters exactly to the explicit Target Matrix.
         """

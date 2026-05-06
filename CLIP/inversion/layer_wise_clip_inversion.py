@@ -19,7 +19,7 @@ class LayerWiseCLIPInversion(object):
     """
     model: visual encoder of CLIP model.
     """
-    def __init__(self, local_path, model, image_size, lr, train_steps, alpha_pr, alpha_rf, alpha_gmrf, scheduler_params,
+    def __init__(self, local_path, model, image_size, lr, train_steps, alpha_pr, alpha_rf, alpha_frob, scheduler_params,
                  use_rf=True, smooth_type='tv', flip_rate=0, log_step=1000, opt_type='adam', boost_factor=True,
                  loss_type='l2', grad_norm=None, clip_input='clip', input_aug=False, save_step=0,
                  pre_size_change=None, normalize=True, head=None, rf_factor=1.0, start_block=0):
@@ -33,7 +33,7 @@ class LayerWiseCLIPInversion(object):
         self.train_steps = train_steps
         self.alpha_pr = alpha_pr
         self.alpha_rf = alpha_rf
-        self.alpha_gmrf = alpha_gmrf
+        self.alpha_frob = alpha_frob
         self.cls2mean = []
         self.cls2std = []
         self.scheduler_params = scheduler_params
@@ -166,7 +166,7 @@ class LayerWiseCLIPInversion(object):
                     )
                 )                
                 
-                if self.alpha_gmrf > 0.0 and self.gmrfs is not None:
+                if self.alpha_frob > 0.0 and self.gmrfs is not None:
                     self.gmrf_hooks.append(
                         functions.DeepInversionLaplaceHook(
                             module=mi,
@@ -199,7 +199,7 @@ class LayerWiseCLIPInversion(object):
                 
                 global_name = self._module_id_to_global.get(id(mi))
                 
-                if self.alpha_gmrf > 0.0 and self.gmrfs is not None:
+                if self.alpha_frob > 0.0 and self.gmrfs is not None:
                     self.gmrf_hooks.append(
                         functions.DeepInversionLaplaceHook(
                             module=mi,
@@ -299,7 +299,7 @@ class LayerWiseCLIPInversion(object):
             else:
                 l_blur = torch.tensor(0, dtype=torch.float32, requires_grad=False)
 
-            if len(self.gmrf_hooks) > 0 and self.alpha_gmrf > 0.0:
+            if len(self.gmrf_hooks) > 0 and self.alpha_frob > 0.0:
                 l_gmrf = torch.stack([h.nll() for h in self.gmrf_hooks]).sum()
             else:
                 l_gmrf = torch.tensor(0, dtype=torch.float32, requires_grad=False)     
@@ -314,7 +314,7 @@ class LayerWiseCLIPInversion(object):
                 if l_stat.item() > init_losses['stat'] and self.boost_factor:
                     alpha_rf = min(alpha_rf * 2, 10 * self.alpha_rf)
 
-            loss = alpha_mse * l_mse + alpha_rf * l_stat + alpha_pr * l_blur + self.alpha_gmrf * l_gmrf
+            loss = alpha_mse * l_mse + alpha_rf * l_stat + alpha_pr * l_blur + self.alpha_frob * l_gmrf
 
             if input_loss is not None:
                 l_in = input_loss.compute_loss(inputs)
@@ -350,7 +350,7 @@ class LayerWiseCLIPInversion(object):
                 
             gmrf_val = l_gmrf.item() if isinstance(l_gmrf, torch.Tensor) else l_gmrf
 
-            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_pr * l_blur.item() + self.alpha_gmrf * gmrf_val
+            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_pr * l_blur.item() + self.alpha_frob * gmrf_val
             if l_in is not None:
                 cmp_loss += self.alpha_rf * l_in.item()
             if best_loss is None or best_loss > cmp_loss:
@@ -703,7 +703,7 @@ class LayerWiseCLIPInversion(object):
                         )
                     )
 
-                    if self.alpha_gmrf > 0.0 and self.gmrfs is not None:
+                    if self.alpha_frob > 0.0 and self.gmrfs is not None:
                         self.gmrf_hooks.append(
                             functions.DeepInversionLaplaceHook(
                                 module=mi,

@@ -78,7 +78,7 @@ def main(opts):
         'tune_lr': opts.tune_lr,
         'alpha_pr': opts.alpha_pr,
         'alpha_rf': opts.alpha_rf,
-        'alpha_gmrf': opts.alpha_gmrf,
+        'alpha_frob': opts.alpha_frob,
         'rf_factor': opts.rf_factor,
         'flip_rate': opts.flip_rate,
         'layer_wise': bool(opts.layer_wise),
@@ -255,7 +255,7 @@ if __name__ == '__main__':
     parser.add_argument('--tune_lr', type=float)
     parser.add_argument('--alpha_pr', type=float)
     parser.add_argument('--alpha_rf', type=float)
-    parser.add_argument('--alpha_gmrf', type=float, default=0.1)
+    parser.add_argument('--alpha_frob', type=float, default=0.1)
     parser.add_argument('--rf_factor', type=float, default=1.0)
     parser.add_argument('--flip_rate', type=float, default=0)
     parser.add_argument('--layer_wise', type=int, default=1)
@@ -336,7 +336,7 @@ if __name__ == '__main__':
     print('tune_lr\t\t', args.tune_lr)
     print('alpha pr\t\t', args.alpha_pr)
     print('alpha rf\t\t', args.alpha_rf)
-    print('alpha gmrf\t\t', args.alpha_gmrf)
+    print('alpha gmrf\t\t', args.alpha_frob)
     print('rf_factor\t\t', args.rf_factor)
     print('flip rate\t\t', args.flip_rate)
     print('layer_wise\t\t', args.layer_wise)

@@ -68,17 +68,17 @@ inv_milestones='80,120'
 inv_lr_rate=0.5
 inv_warmup=5
 
-# ALPHA_GMRF=(0.01 0.05 0.1 0.25 0.5 1.0)
-ALPHA_GMRF=(0.05)
+# alpha_frob=(0.01 0.05 0.1 0.25 0.5 1.0)
+alpha_frob=(0.05)
 SEED=(1 2 3 4 5)
 
-for alpha_gmrf in "${ALPHA_GMRF[@]}"; do
+for alpha_frob in "${alpha_frob[@]}"; do
 	for seed in "${SEED[@]}"; do
 		echo "==============================================================="
-		echo "Starting run with alpha_gmrf = ${alpha_gmrf} and seed = ${seed}"
+		echo "Starting run with alpha_frob = ${alpha_frob} and seed = ${seed}"
 		echo "==============================================================="
 		
-		local_path="${BASE_PATH}/gmrf_alpha_${alpha_gmrf}_seed_${seed}"
+		local_path="${BASE_PATH}/gmrf_alpha_${alpha_frob}_seed_${seed}"
 		mkdir -p "${local_path}"
 
 		python3 -u main_task_contrastive_cl.py --local_path=$local_path \
@@ -127,7 +127,7 @@ for alpha_gmrf in "${ALPHA_GMRF[@]}"; do
 			--tune_lr=$tune_lr \
 			--alpha_pr=$alpha_pr \
 			--alpha_rf=$alpha_rf \
-			--alpha_gmrf=$alpha_gmrf \
+			--alpha_frob=$alpha_frob \
 			--rf_factor=$rf_factor \
 			--layer_wise=$layer_wise \
 			--layer_batch=$layer_batch \

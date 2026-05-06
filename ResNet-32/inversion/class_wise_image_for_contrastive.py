@@ -16,7 +16,7 @@ from backbone import resnet_cifar
 
 
 class ClassWiseContrastiveInversion(object):
-    def __init__(self, local_path, model, image_size, lr, train_steps, alpha_pr, alpha_rf, alpha_gmrf,
+    def __init__(self, local_path, model, image_size, lr, train_steps, alpha_pr, alpha_rf, alpha_frob,
                  scheduler_params,hook_type='l2', hook_rate=1.0, mse_type='l2', flip_rate=0, log_step=1000, 
                  opt_type='adam', boost_factor=True):
         self.local_path = local_path
@@ -28,7 +28,7 @@ class ClassWiseContrastiveInversion(object):
         self.train_steps = train_steps
         self.alpha_pr = alpha_pr
         self.alpha_rf = alpha_rf
-        self.alpha_gmrf = alpha_gmrf
+        self.alpha_frob = alpha_frob
         self.cls2mean = []
         self.cls2std = []
         self.scheduler_params = scheduler_params
@@ -185,7 +185,7 @@ class ClassWiseContrastiveInversion(object):
 
             l_gmrf = 0.0
             valid_hooks = 0
-            if gmrf_hooks is not None and self.alpha_gmrf > 0.0:
+            if gmrf_hooks is not None and self.alpha_frob > 0.0:
                 for hook in gmrf_hooks:
                     if hook.nll is not None:
                         l_gmrf += hook.nll
@@ -202,7 +202,7 @@ class ClassWiseContrastiveInversion(object):
                     alpha_mse = min(alpha_mse * 2, 10)
                 if l_stat.item() > init_losses['stat'] and self.boost_factor:
                     alpha_rf = min(alpha_rf * 2, 10 * self.alpha_rf)
-            loss = alpha_mse * l_mse + alpha_rf * l_stat + self.alpha_gmrf * l_gmrf
+            loss = alpha_mse * l_mse + alpha_rf * l_stat + self.alpha_frob * l_gmrf
             if input_loss is not None:
                 l_in = input_loss.compute_loss(inputs)
                 if i == 0:
@@ -219,7 +219,7 @@ class ClassWiseContrastiveInversion(object):
 
             gmrf_val = l_gmrf.item() if isinstance(l_gmrf, torch.Tensor) else l_gmrf
 
-            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_gmrf * gmrf_val
+            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_frob * gmrf_val
             if l_in is not None:
                 cmp_loss += self.alpha_rf * l_in.item()
             if (i % self.log_step == 0 or i == iters - 1) and verbose:

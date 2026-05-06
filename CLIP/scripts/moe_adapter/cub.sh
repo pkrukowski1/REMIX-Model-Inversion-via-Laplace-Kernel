@@ -21,13 +21,13 @@ source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate laplace_kernel_in_cl
 
 # Dense logarithmic grid (7 values)
-ALPHA_GMRF_VALUES=(0.0001 0.0005 0.001 0.002 0.005 0.01 0.05)
+alpha_frob_VALUES=(0.0001 0.0005 0.001 0.002 0.005 0.01 0.05)
 # 0.01 best
 
 # Extract the specific value for THIS specific task using the SLURM array ID
-ALPHA=${ALPHA_GMRF_VALUES[$SLURM_ARRAY_TASK_ID]}
+ALPHA=${alpha_frob_VALUES[$SLURM_ARRAY_TASK_ID]}
 
-echo "Running SLURM Array Task ID: $SLURM_ARRAY_TASK_ID with alpha_gmrf=$ALPHA"
+echo "Running SLURM Array Task ID: $SLURM_ARRAY_TASK_ID with alpha_frob=$ALPHA"
 
 RUN_PATH="$BASE_PATH/alpha_${ALPHA}"
 mkdir -p "$RUN_PATH"
@@ -36,4 +36,4 @@ python3 -u main.py \
     --config=./configs/moe_adapter/cub.yaml \
     --seed 1993 \
     --local_path="$RUN_PATH" \
-    --alpha_gmrf="$ALPHA"
+    --alpha_frob="$ALPHA"

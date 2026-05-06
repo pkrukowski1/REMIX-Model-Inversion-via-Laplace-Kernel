@@ -494,7 +494,7 @@ class TaskClassContrastiveRunner(object):
         if self.train_params['use_cuda']:
             self.old_model.cuda()
 
-        if self.inversion_params['alpha_gmrf'] > 0.0:
+        if self.inversion_params['alpha_frob'] > 0.0:
             if hasattr(self, 'gmrfs') and self.gmrfs is not None:
                 self.gmrfs.cuda()
 
@@ -542,7 +542,7 @@ class TaskClassContrastiveRunner(object):
             for h in hooks: 
                 h.remove()
 
-            if self.inversion_params['alpha_gmrf'] > 0.0:
+            if self.inversion_params['alpha_frob'] > 0.0:
                 if not hasattr(self, "gmrfs"):
                     self.gmrfs = torch.nn.ModuleList([LaplaceKernelGMRF(m.num_features).to(device) for m in target_modules])
 
@@ -575,13 +575,13 @@ class TaskClassContrastiveRunner(object):
             print(f"==> Pure Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
 
             self.inv_buffer.generator.gmrfs = copy.deepcopy(self.gmrfs).eval()
-            self.inv_buffer.generator.alpha_gmrf = self.inversion_params.get('alpha_gmrf', 0.1)
+            self.inv_buffer.generator.alpha_frob = self.inversion_params.get('alpha_frob', 0.1)
         else:
-            print("\n==> Skipping GMRF covariance extraction (alpha_gmrf = 0.0). PMI speed mode!")
+            print("\n==> Skipping GMRF covariance extraction (alpha_frob = 0.0). PMI speed mode!")
             self.gmrfs = None
             if hasattr(self.inv_buffer, 'generator'):
                 self.inv_buffer.generator.gmrfs = None
-                self.inv_buffer.generator.alpha_gmrf = 0.0
+                self.inv_buffer.generator.alpha_frob = 0.0
 
         # compute class mean and std for current task.
         cur_cls2mean, cur_cls2std = cl_functions.get_class_wise_distribution(

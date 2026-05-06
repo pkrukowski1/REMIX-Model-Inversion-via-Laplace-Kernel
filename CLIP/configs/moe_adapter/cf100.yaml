@@ -37,7 +37,7 @@ inv_lr: 0.1
 train_steps: 200
 alpha_pr: 0.005
 alpha_rf: 0.002
-alpha_gmrf: 0.001
+alpha_frob: 0.001
 size_change: ''
 layer_size_change: '300,600,900,1200'
 l_pr: 0.0
