@@ -1,7 +1,7 @@
 # Model inversion with layer-specific modeling and alginment for data-free continual learning
 
 <p align="center">
-<embed src="./imgs/remix.pdf" type="application/pdf" width="100%" height="600px" />
+<iframe src="./imgs/remix.pdf" width="100%" height="600px"></iframe>
 </p>
 
 [![Paper](https://img.shields.io/badge/NeurIPS-Paper-blue)](https://neurips.cc/virtual/2025/poster/115103)
