@@ -1,35 +1,28 @@
-# Model inversion with layer-specific modeling and alginment for data-free continual learning
+# Stop Marginalizing My Dreams: Model Inversion via Laplace Kernel for Continual Learning
 
 <p align="center">
 <img src="./imgs/remix.png"  width="1000px">
 </p>
 
-[![Paper](https://img.shields.io/badge/NeurIPS-Paper-blue)](https://neurips.cc/virtual/2025/poster/115103)
-[![License](https://img.shields.io/github/license/RuilinTong/PMI-CFS-DFCL?cacheSeconds=60)](https://github.com/RuilinTong/PMI-CFS-DFCL/blob/main/LICENSE)
-![NeurIPS 2025](https://img.shields.io/badge/NeurIPS-2025-blue)
-
 ## Abstract <a id="abstract"></a>
 
-Continual learning (CL) aims to adapt a model to a sequence of tasks while maintaining performance on previously seen ones. Despite their effectiveness in mitigating forgetting, data storage and replay are often infeasible due to privacy or security constraints, and are impractical or unavailable for arbitrary pre-trained models. Data-free CL aims to continually update models with new tasks without storing previous data. Model inversion enables data generation by extracting knowledge from a trained model, allowing replay of previous tasks without stored data. However, model inversion faces two key challenges. Inversely generating data, e.g., images, solely from highly-compressed class labels leads to feature drift between synthetic and real data, causing forgetting of real image knowledge after replay and degrading inversion quality in subsequent stages. And performing inversion is usually computationally expensive, as each iteration requires backpropagation through the full model and many steps are needed for convergence. These problems are more severe in \textcolor{orange}{pre-trained} foundation models such as Contrastive Language-Image Pre-training (CLIP) models. To improve model inversion efficiency, we propose Per-layer Model Inversion (PMI) approach inspired by the faster convergence of single-layer optimization. The inputs optimized from PMI provide strong initialization for full-model inversion, significantly reducing the number of iterations required for convergence. To address feature distribution shift, we model class-wise feature distribution using a Gaussian distribution and preserve distributional information with a contrastive model. Sampling features for inversion ensures alignment between synthetic and real feature distributions. Combining PMI and feature modeling, we demonstrate the feasibility of adapting models to new classes by generating data from pseudo image features mapped through semantic-aware feature projection. Our method shows strong effectiveness and compatibility across multiple CL settings.
+Data-free continual learning (DFCIL) relies on model inversion to synthesize pseudo-samples and mitigate catastrophic forgetting. However, existing inversion methods are fundamentally limited by a simplifying assumption: they model feature distributions using diagonal covariance, effectively ignoring correlations that define the geometry of learned representations. As a result, synthesized samples often lack fidelity, limiting knowledge retention. In this work, we show that modeling feature dependencies is a key ingredient for effective DFCIL. We introduce \our{}, a structured covariance modeling framework that enables scalable full-covariance modeling without the prohibitive cost of dense matrix inversion and log-determinant computation. By leveraging a Laplace kernel parameterization, \our{} captures structured feature dependencies using memory that scales linearly with the feature dimensionality, while requiring only an additional logarithmic factor in computation. Modeling these correlations produces more coherent synthetic samples and consistently improves performance across standard DFCIL benchmarks. Our results demonstrate that moving beyond diagonal assumptions is essential for effective and scalable data-free continual learning.
 
 ## Setup
-- This implementation requires python 3.9.18.
-- To install the required dependencies, please run: `pip3 install -r requirements.txt`
 
-### Code implementation details
-- Continual learning implementations on ResNet-32 (Table 1 in the paper) is shown in 'ResNet-32' repository.
-- Continual learning implementations on CLIP (Table 2 in the paper) is shown in 'CLIP' repository.
+This implementation requires Python 3.9.18 and Conda.
 
-**Note:** Some experiments in this project are sensitive to random seeds, which may lead to variations in the results. We recommend running the experiments with multiple seeds to obtain reliable average performance. You can specify the seed using the `--seed` argument in the script.
+Create and activate the environment with:
 
-## Citation
-
-If you find our work helpful, please cite our paper by the following reference:
-
+```bash
+conda env create -f environment.yml
+conda activate <env_name>
 ```
-@inproceedings{tong2025pmi_cfs,
-  title={Model Inversion with Layer-Specific Modeling and Alignment for Data-Free Continual Learning},
-  author={Tong, Ruilin and Lu, Haodong and Liu, Yuhang and Gong, Dong},
-  booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
-}
-```
+
+### Codebase Overview
+
+- The continual learning implementation for the ResNet-32 backbone (corresponding to Table 1 in the paper) is provided in the `resnet32` directory. Since the feature dimensionality in this setting is relatively moderate, the exact Gaussian Negative Log-Likelihood (NLL) is computed directly.
+
+- The continual learning implementation for the ViT backbone (corresponding to Table 2 in the paper) is provided in the `clip` directory. Similarly, due to the moderate feature dimensionality, the exact Gaussian NLL is evaluated explicitly.
+
+- The `visualizations` directory contains model inversion pipelines based on pretrained ResNet-34 and ViT backbones, together with the efficient structured NLL computation used for high-dimensional feature-map inversion and qualitative sample generation.
