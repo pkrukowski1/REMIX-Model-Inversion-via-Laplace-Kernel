@@ -22,7 +22,7 @@ plt.rcParams.update({
 })
 
 layers = ['layer1', 'layer2', 'layer3', 'layer4']
-layer_dims = {'layer1': 802816, 'layer2': 401408, 'layer3': 200704, 'layer4': 100352}
+layer_dims = {'layer1': 200704, 'layer2': 100352, 'layer3': 50176, 'layer4': 25088}
 
 fig, axes = plt.subplots(2, 2, figsize=(11, 3.8), sharex=True)
 axes = axes.flatten()
