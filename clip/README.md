@@ -1,19 +1,27 @@
-# Code implementation of CLIP-based continual learning
+# CLIP-Based Continual Learning Implementation
 
-## Baseline implementation
-- This implementation is based on [LAMDA-PILOT](https://github.com/LAMDA-CL/LAMDA-PILOT).
-- The implementation of MoE-adapter is referred from [MoE-Adapters4CL](https://github.com/JiazuoYu/MoE-Adapters4CL)
+## Baseline Frameworks
 
-## Data preparation
-- This dataset requires all dataset to be located in `/shared/sets/datasets/`.
-- To change data location, please refer to `./utils/data.py`.
+This implementation builds upon the following open-source projects:
 
-## CLIP-based CL experiments
-- To reimplement CLIP-based continual learning experiments, please run scripts: `bash ./moe_adapter_{dataset}.sh`.
-- `{dataset}` can be `cifar` for CIFAR-100, `inr` for ImageNet-R and 'cub' for CUB-200.
-- Experient setting can be altered by changin files in `./configs/moe_adapter/`.
+- [PMI](https://github.com/RuilinTong/PMI-CFS-DFCL) — base framework for data-free continual learning and model inversion.
+- [LAMDA-PILOT](https://github.com/LAMDA-CL/LAMDA-PILOT) — continual learning training infrastructure.
+- [MoE-Adapters4CL](https://github.com/JiazuoYu/MoE-Adapters4CL) — implementation of the MoE-Adapter architecture used in our CLIP-based experiments.
 
-## Train model on synthetic new task data
-- To reimplement CLIP-based continual learning experiments where training data of last task is synthesized by model inversion, please run scripts: `bash ./moe_openset_{dataset}.sh`.
-- `{dataset}` can be `cifar` for CIFAR-100 and `inr` for ImageNet-R.
-- Experient setting can be altered by changin files in `./configs/moe_openset/`.
+## Data Preparation
+
+By default, all datasets are expected to be located at:
+
+```bash
+/shared/sets/datasets/
+```
+To modify the dataset location, please edit:
+```bash
+/utils/data.py
+```
+
+## CLIP-Based Continual Learning Experiments
+To reproduce the CLIP-based continual learning experiments, run:
+```bash
+bash ./scripts/moe_adapter_{dataset}.sh
+```
