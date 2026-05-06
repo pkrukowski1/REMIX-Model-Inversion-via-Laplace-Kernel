@@ -132,8 +132,8 @@ class ClassWiseContrastiveInversion(object):
         input_smooth = self.gaussian_kernel(input_pad).detach()
         return F.mse_loss(inputs, input_smooth)
     
-    def _get_gmrf_map(self):
-        if not hasattr(self, 'gmrfs') or self.gmrfs is None:
+    def _get_lcm_map(self):
+        if not hasattr(self, 'lcms') or self.lcms is None:
             return {}
         
         # 1. Get all BN modules from the backbone in order
@@ -141,18 +141,18 @@ class ClassWiseContrastiveInversion(object):
         
         # 2. Map ModuleList or standard list to the modules by order
         # This is the fix for your ModuleList AttributeError
-        if isinstance(self.gmrfs, (list, torch.nn.ModuleList)):
-            return {bn_modules[i]: self.gmrfs[i] for i in range(min(len(bn_modules), len(self.gmrfs)))}
+        if isinstance(self.lcms, (list, torch.nn.ModuleList)):
+            return {bn_modules[i]: self.lcms[i] for i in range(min(len(bn_modules), len(self.lcms)))}
         
         # 3. If it's already a dict, return it
-        if isinstance(self.gmrfs, dict):
-            gmrf_list = list(self.gmrfs.values())
-            return {bn_modules[i]: gmrf_list[i] for i in range(min(len(bn_modules), len(gmrf_list)))}
+        if isinstance(self.lcms, dict):
+            lcm_list = list(self.lcms.values())
+            return {bn_modules[i]: lcm_list[i] for i in range(min(len(bn_modules), len(lcm_list)))}
             
         return {}
 
     def inversion(self, inputs, target_feats, opt, scheduler, model=None, iters=None, return_best=False,
-                  use_pool=False, input_loss=None, alpha_feat=None, verbose=True, gmrf_hooks=None):
+                  use_pool=False, input_loss=None, alpha_feat=None, verbose=True, lcm_hooks=None):
         # losses = {}
         best_loss = None
         best_inputs = None
@@ -183,16 +183,16 @@ class ClassWiseContrastiveInversion(object):
             l_mse = self.mse_loss(out_feat, target_feats)
             # loss = l_mse + self.alpha_pr * l_blur + self.alpha_rf * l_stat
 
-            l_gmrf = 0.0
+            l_lcm = 0.0
             valid_hooks = 0
-            if gmrf_hooks is not None and self.alpha_frob > 0.0:
-                for hook in gmrf_hooks:
+            if lcm_hooks is not None and self.alpha_frob > 0.0:
+                for hook in lcm_hooks:
                     if hook.nll is not None:
-                        l_gmrf += hook.nll
+                        l_lcm += hook.nll
                         valid_hooks += 1
             
             if valid_hooks > 0:
-                l_gmrf = l_gmrf / valid_hooks
+                l_lcm = l_lcm / valid_hooks
 
             if i == 0:
                 init_losses['mse'] = l_mse.item()
@@ -202,7 +202,7 @@ class ClassWiseContrastiveInversion(object):
                     alpha_mse = min(alpha_mse * 2, 10)
                 if l_stat.item() > init_losses['stat'] and self.boost_factor:
                     alpha_rf = min(alpha_rf * 2, 10 * self.alpha_rf)
-            loss = alpha_mse * l_mse + alpha_rf * l_stat + self.alpha_frob * l_gmrf
+            loss = alpha_mse * l_mse + alpha_rf * l_stat + self.alpha_frob * l_lcm
             if input_loss is not None:
                 l_in = input_loss.compute_loss(inputs)
                 if i == 0:
@@ -217,15 +217,15 @@ class ClassWiseContrastiveInversion(object):
             loss.backward()
             opt.step()
 
-            gmrf_val = l_gmrf.item() if isinstance(l_gmrf, torch.Tensor) else l_gmrf
+            lcm_val = l_lcm.item() if isinstance(l_lcm, torch.Tensor) else l_lcm
 
-            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_frob * gmrf_val
+            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_frob * lcm_val
             if l_in is not None:
                 cmp_loss += self.alpha_rf * l_in.item()
             if (i % self.log_step == 0 or i == iters - 1) and verbose:
                 print('finish training step:', i)
                 print('mse loss:', l_mse.item(), 'smooth loss:', 'none', 'stat loss:', l_stat.item(),
-                      'gmrf nll:', gmrf_val, 'total loss:', cmp_loss, end=' ' if l_in is not None else '\n')
+                      'lcm nll:', lcm_val, 'total loss:', cmp_loss, end=' ' if l_in is not None else '\n')
                 if l_in is not None:
                     print('input loss:', l_in.item())
             if best_loss is None or best_loss > cmp_loss:
@@ -262,21 +262,21 @@ class ClassWiseContrastiveInversion(object):
         else:
             scheduler = None
 
-        current_gmrf_hooks = []
-        gmrf_map = self._get_gmrf_map()
+        current_lcm_hooks = []
+        lcm_map = self._get_lcm_map()
         for m in self.model.backbone.modules():
             # Check for module 'm', not string 'name'
-            if isinstance(m, torch.nn.BatchNorm2d) and m in gmrf_map:
-                current_gmrf_hooks.append(DeepInversionLaplaceHook(m, gmrf_map[m]))
+            if isinstance(m, torch.nn.BatchNorm2d) and m in lcm_map:
+                current_lcm_hooks.append(DeepInversionLaplaceHook(m, lcm_map[m]))
         
         inputs, best_loss = self.inversion(
             inputs=inputs, target_feats=target_feats, opt=opt, scheduler=scheduler,
             return_best=return_best, iters=iters,
-            gmrf_hooks=current_gmrf_hooks
+            lcm_hooks=current_lcm_hooks
         )
         self.remove_hooks()
         
-        for hook in current_gmrf_hooks:
+        for hook in current_lcm_hooks:
             hook.close()
         inputs.clone().detach()
         if relabel_input:
@@ -386,12 +386,12 @@ class ClassWiseContrastiveInversion(object):
 
                     self.register_hooks(model=all_blocks[i])
 
-                    current_gmrf_hooks = []
-                    gmrf_map = self._get_gmrf_map()
+                    current_lcm_hooks = []
+                    lcm_map = self._get_lcm_map()
                     for m in all_blocks[i].modules():
                         # Use object identity 'm'
-                        if isinstance(m, torch.nn.BatchNorm2d) and m in gmrf_map:
-                            current_gmrf_hooks.append(DeepInversionLaplaceHook(m, gmrf_map[m]))
+                        if isinstance(m, torch.nn.BatchNorm2d) and m in lcm_map:
+                            current_lcm_hooks.append(DeepInversionLaplaceHook(m, lcm_map[m]))
 
                     opt_inputs, best_loss = self.inversion(
                         inputs=inputs,
@@ -405,11 +405,11 @@ class ClassWiseContrastiveInversion(object):
                         input_loss=input_loss,
                         alpha_feat=alpha_rf,
                         verbose=True,
-                        gmrf_hooks=current_gmrf_hooks
+                        lcm_hooks=current_lcm_hooks
                     )
                     self.remove_hooks()
 
-                    for hook in current_gmrf_hooks:
+                    for hook in current_lcm_hooks:
                         hook.close()
 
                     best_loss_cross = 0
@@ -453,21 +453,21 @@ class ClassWiseContrastiveInversion(object):
                 optimizer=opt, scheduler=step_scheduler, warmup=self.scheduler_params['warmup'], lr=finetune_lr)
             self.register_hooks(model=None)
 
-            final_gmrf_hooks = []
-            gmrf_map = self._get_gmrf_map()
+            final_lcm_hooks = []
+            lcm_map = self._get_lcm_map()
             for n, m in self.model.named_modules():
                 # Use object identity 'm'
-                if isinstance(m, torch.nn.BatchNorm2d) and m in gmrf_map:
-                    final_gmrf_hooks.append(DeepInversionLaplaceHook(m, gmrf_map[m]))
+                if isinstance(m, torch.nn.BatchNorm2d) and m in lcm_map:
+                    final_lcm_hooks.append(DeepInversionLaplaceHook(m, lcm_map[m]))
 
             opt_inputs, best_loss = self.inversion(
                 inputs=inputs, target_feats=target_feats[start:end, :], opt=opt, scheduler=scheduler,
                 return_best=return_best, iters=finetune_iters, model=None,
-                gmrf_hooks=final_gmrf_hooks
+                lcm_hooks=final_lcm_hooks
             )
             self.remove_hooks()
             
-            for hook in final_gmrf_hooks:
+            for hook in final_lcm_hooks:
                 hook.close()
                 
             print('best loss after tuning is:', best_loss)
@@ -637,19 +637,19 @@ class WarmupScheduler(object):
 
 
 class DeepInversionLaplaceHook:
-    def __init__(self, module, gmrf):
+    def __init__(self, module, lcm):
         self.module = module
         self.markov_hook = module.register_forward_hook(self.hook_fn)
-        self.gmrf = gmrf
+        self.lcm = lcm
         self.value = None
 
         with torch.no_grad():
-            R_gmrf = self.gmrf.correlation()
+            R_lcm = self.lcm.correlation()
             
             bn_var = self.module.running_var + 1e-5
             std_bn = torch.sqrt(bn_var)
             
-            Sigma = R_gmrf * (std_bn.unsqueeze(1) * std_bn.unsqueeze(0))
+            Sigma = R_lcm * (std_bn.unsqueeze(1) * std_bn.unsqueeze(0))
             Sigma = Sigma + torch.eye(Sigma.size(0), device=Sigma.device) * 1e-5
             
             self.L = torch.linalg.cholesky(Sigma)

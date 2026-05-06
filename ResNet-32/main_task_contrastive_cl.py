@@ -336,7 +336,7 @@ if __name__ == '__main__':
     print('tune_lr\t\t', args.tune_lr)
     print('alpha pr\t\t', args.alpha_pr)
     print('alpha rf\t\t', args.alpha_rf)
-    print('alpha gmrf\t\t', args.alpha_frob)
+    print('alpha lcm\t\t', args.alpha_frob)
     print('rf_factor\t\t', args.rf_factor)
     print('flip rate\t\t', args.flip_rate)
     print('layer_wise\t\t', args.layer_wise)

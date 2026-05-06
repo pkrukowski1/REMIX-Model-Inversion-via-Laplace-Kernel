@@ -20,7 +20,7 @@ import torch.nn.functional as F
 import shutil
 
 from clip_backbones.moe_clip import create_model_and_transforms
-from inversion.gmrf import LaplaceKernelGMRF
+from inversion.lcm import LCM
 from inversion.functions import WelfordCovarianceTracker
 from inversion import layer_wise_clip_inversion
 from inversion import feature_stats
@@ -278,10 +278,10 @@ class Learner(BaseLearner):
             return
         
         if self.args['alpha_frob'] <= 0.0:
-            print("\n==> Skipping GMRF covariance extraction (alpha_frob = 0.0). PMI speed mode!")
-            self.gmrfs = None
+            print("\n==> Skipping lcm covariance extraction (alpha_frob = 0.0). PMI speed mode!")
+            self.lcms = None
             if hasattr(self, 'inversion_runner'):
-                self.inversion_runner.gmrfs = None
+                self.inversion_runner.lcms = None
             return
 
         # 1. Build an exact memory mapping from PyTorch
@@ -354,8 +354,8 @@ class Learner(BaseLearner):
         for h in hooks: 
             h.remove()
 
-        if not hasattr(self, "gmrfs") or self.gmrfs is None:
-            self.gmrfs = torch.nn.ModuleDict()
+        if not hasattr(self, "lcms") or self.lcms is None:
+            self.lcms = torch.nn.ModuleDict()
 
         n_new = end_class - start_class
         n_total = end_class
@@ -366,51 +366,51 @@ class Learner(BaseLearner):
             tracker = trackers[name]
             safe_name = name.replace(".", "-") 
             
-            if safe_name not in self.gmrfs:
+            if safe_name not in self.lcms:
                 expected_dim = unified_name2stat[name][0].shape[0]
-                self.gmrfs[safe_name] = LaplaceKernelGMRF(dim=expected_dim).to(self._device)
+                self.lcms[safe_name] = LCM(dim=expected_dim).to(self._device)
                 
             if tracker is None or tracker.n < 2:
                 continue
 
             R_curr = tracker.get_correlation_matrix()
-            gmrf = self.gmrfs[safe_name]
+            lcm = self.lcms[safe_name]
 
             if start_class == 0:
                 R_global = R_curr
             else:
                 with torch.no_grad():
-                    R_old = gmrf.correlation().detach()
+                    R_old = lcm.correlation().detach()
                 R_global = ratio_old * R_old + ratio_new * R_curr
 
-            self._fit_gmrf_correlation(gmrf, R_global)
+            self._fit_lcm_correlation(lcm, R_global)
 
         self.inv_model.train()
-        print(f"==> Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
+        print(f"==> Topology lcm memory locked! Class Ratio: {ratio_new:.2f}")
 
-        mapped_gmrfs = {k.replace("-", "."): v for k, v in self.gmrfs.items()}
-        print(f"Total GMRFs generated and transferred to runner: {len(mapped_gmrfs)}")        
-        self.inversion_runner.gmrfs = mapped_gmrfs
-        log_memory_comparison(self.local_path, self.gmrfs)
+        mapped_lcms = {k.replace("-", "."): v for k, v in self.lcms.items()}
+        print(f"Total lcms generated and transferred to runner: {len(mapped_lcms)}")        
+        self.inversion_runner.lcms = mapped_lcms
+        log_memory_comparison(self.local_path, self.lcms)
 
-    def _fit_gmrf_correlation(self, gmrf, target_matrix, epochs=200, lr=0.01):
+    def _fit_lcm_correlation(self, lcm, target_matrix, epochs=200, lr=0.01):
         """
-        Uses Adam to fit the GMRF parameters exactly to the explicit Target Matrix.
+        Uses Adam to fit the lcm parameters exactly to the explicit Target Matrix.
         """
-        opt = torch.optim.Adam(gmrf.parameters(), lr=lr)
+        opt = torch.optim.Adam(lcm.parameters(), lr=lr)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
         
-        gmrf.train()
+        lcm.train()
         for _ in range(epochs):
             opt.zero_grad()
-            current_correlation = gmrf.correlation()
+            current_correlation = lcm.correlation()
             
             loss = torch.nn.functional.mse_loss(current_correlation, target_matrix)
             loss.backward()
             opt.step()
             scheduler.step()
             
-        gmrf.eval()
+        lcm.eval()
 
     def _train(self, train_loader, test_loader, tb_logger=None):
         self._network.to(self._device)

@@ -68,8 +68,8 @@ class LayerWiseCLIPInversion(object):
         self.best_layer_rfs = []
         self.tv_function = None
 
-        self.gmrfs = None 
-        self.gmrf_hooks = []
+        self.lcms = None 
+        self.lcm_hooks = []
         self._module_id_to_global = {id(m): n for n, m in self.model.named_modules()}
 
         if self.smooth_type == 'tv':
@@ -166,11 +166,11 @@ class LayerWiseCLIPInversion(object):
                     )
                 )                
                 
-                if self.alpha_frob > 0.0 and self.gmrfs is not None:
-                    self.gmrf_hooks.append(
+                if self.alpha_frob > 0.0 and self.lcms is not None:
+                    self.lcm_hooks.append(
                         functions.DeepInversionLaplaceHook(
                             module=mi,
-                            gmrf=self.gmrfs[n],
+                            lcm=self.lcms[n],
                             running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
                             running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
                             batch_dim=1
@@ -199,11 +199,11 @@ class LayerWiseCLIPInversion(object):
                 
                 global_name = self._module_id_to_global.get(id(mi))
                 
-                if self.alpha_frob > 0.0 and self.gmrfs is not None:
-                    self.gmrf_hooks.append(
+                if self.alpha_frob > 0.0 and self.lcms is not None:
+                    self.lcm_hooks.append(
                         functions.DeepInversionLaplaceHook(
                             module=mi,
-                            gmrf=self.gmrfs[global_name],
+                            lcm=self.lcms[global_name],
                             running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
                             running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
                             batch_dim=batch_dim
@@ -218,9 +218,9 @@ class LayerWiseCLIPInversion(object):
             hi.remove_hook()
         self.stat_hooks.clear()
         
-        for hi in self.gmrf_hooks:
+        for hi in self.lcm_hooks:
             hi.remove_hook()
-        self.gmrf_hooks.clear()
+        self.lcm_hooks.clear()
 
     def criterion_pr(self, inputs):
         if self.smooth_type == 'tv':
@@ -299,10 +299,10 @@ class LayerWiseCLIPInversion(object):
             else:
                 l_blur = torch.tensor(0, dtype=torch.float32, requires_grad=False)
 
-            if len(self.gmrf_hooks) > 0 and self.alpha_frob > 0.0:
-                l_gmrf = torch.stack([h.nll() for h in self.gmrf_hooks]).sum()
+            if len(self.lcm_hooks) > 0 and self.alpha_frob > 0.0:
+                l_lcm = torch.stack([h.nll() for h in self.lcm_hooks]).sum()
             else:
-                l_gmrf = torch.tensor(0, dtype=torch.float32, requires_grad=False)     
+                l_lcm = torch.tensor(0, dtype=torch.float32, requires_grad=False)     
 
             l_mse = loss_fn(normed_feat, target_feats)
             if i == 0:
@@ -314,7 +314,7 @@ class LayerWiseCLIPInversion(object):
                 if l_stat.item() > init_losses['stat'] and self.boost_factor:
                     alpha_rf = min(alpha_rf * 2, 10 * self.alpha_rf)
 
-            loss = alpha_mse * l_mse + alpha_rf * l_stat + alpha_pr * l_blur + self.alpha_frob * l_gmrf
+            loss = alpha_mse * l_mse + alpha_rf * l_stat + alpha_pr * l_blur + self.alpha_frob * l_lcm
 
             if input_loss is not None:
                 l_in = input_loss.compute_loss(inputs)
@@ -336,10 +336,10 @@ class LayerWiseCLIPInversion(object):
             if (i % self.log_step == 0 or i == iters - 1) and verbose:
                 print('finish training step:', i)
                 
-                gmrf_val = l_gmrf.item() if isinstance(l_gmrf, torch.Tensor) else l_gmrf
+                lcm_val = l_lcm.item() if isinstance(l_lcm, torch.Tensor) else l_lcm
                 
                 print('mse loss:', l_mse.item(), 'smooth loss:', l_blur.item(), 'stat loss:', l_stat.item(),
-                      'gmrf nll:', gmrf_val, 'total loss:', loss.item(), end=' ' if l_in is not None else '\n')
+                      'lcm nll:', lcm_val, 'total loss:', loss.item(), end=' ' if l_in is not None else '\n')
                 
                 if l_in is not None:
                     print('input loss:', l_in.item())
@@ -348,9 +348,9 @@ class LayerWiseCLIPInversion(object):
                 save_images(
                     img_batch=inputs.data, out_path=self.local_path, step=i, id_bias=id_bias)
                 
-            gmrf_val = l_gmrf.item() if isinstance(l_gmrf, torch.Tensor) else l_gmrf
+            lcm_val = l_lcm.item() if isinstance(l_lcm, torch.Tensor) else l_lcm
 
-            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_pr * l_blur.item() + self.alpha_frob * gmrf_val
+            cmp_loss = l_mse.item() + self.alpha_rf * l_stat.item() + self.alpha_pr * l_blur.item() + self.alpha_frob * lcm_val
             if l_in is not None:
                 cmp_loss += self.alpha_rf * l_in.item()
             if best_loss is None or best_loss > cmp_loss:
@@ -703,11 +703,11 @@ class LayerWiseCLIPInversion(object):
                         )
                     )
 
-                    if self.alpha_frob > 0.0 and self.gmrfs is not None:
-                        self.gmrf_hooks.append(
+                    if self.alpha_frob > 0.0 and self.lcms is not None:
+                        self.lcm_hooks.append(
                             functions.DeepInversionLaplaceHook(
                                 module=mi,
-                                gmrf=self.gmrfs[n],
+                                lcm=self.lcms[n],
                                 running_mean=name2stat[n][0].cuda() if self.on_cuda else name2stat[n][0],
                                 running_var=name2stat[n][1].cuda() if self.on_cuda else name2stat[n][1],
                                 batch_dim=1

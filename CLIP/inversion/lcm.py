@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class LaplaceKernelGMRF(nn.Module):
+class LCM(nn.Module):
     def __init__(self, dim, eps=1e-6):
         super().__init__()
         self.dim = dim

@@ -79,7 +79,7 @@ for alpha_frob in "${alpha_frob[@]}"; do
 		echo "Starting run with alpha_frob = ${alpha_frob} and seed = ${seed}"
 		echo "==============================================================="
 		
-		local_path="${BASE_PATH}/gmrf_alpha_${alpha_frob}_seed_${seed}"
+		local_path="${BASE_PATH}/lcm_alpha_${alpha_frob}_seed_${seed}"
 		mkdir -p "${local_path}"
 
 		python3 -u main_task_contrastive_cl.py --local_path=$local_path \

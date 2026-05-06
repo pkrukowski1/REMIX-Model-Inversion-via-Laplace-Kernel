@@ -41,24 +41,24 @@ class BNInputHook(object):
         self.handle.remove()
 
 class DeepInversionLaplaceHook(object):
-    def __init__(self, module, gmrf, running_mean, running_var, batch_dim):
+    def __init__(self, module, lcm, running_mean, running_var, batch_dim):
         self.module = module
         self.inputs = None
         self.handle = self.module.register_forward_hook(hook=self.get_input_hook())
-        self.gmrf = gmrf
+        self.lcm = lcm
         self.batch_dim = batch_dim
         
         self.running_mean = running_mean
         self.running_var = running_var
 
         with torch.no_grad():
-            R_gmrf = self.gmrf.correlation()
+            R_lcm = self.lcm.correlation()
             
             bn_var = self.running_var + 1e-5
             std_bn = torch.sqrt(bn_var)
             
             # Reconstruct theoretical covariance: Sigma = std * R * std
-            Sigma = R_gmrf * (std_bn.unsqueeze(1) * std_bn.unsqueeze(0))
+            Sigma = R_lcm * (std_bn.unsqueeze(1) * std_bn.unsqueeze(0))
             Sigma = Sigma + torch.eye(Sigma.size(0), device=Sigma.device) * 1e-5
             
             self.L = torch.linalg.cholesky(Sigma)
@@ -68,7 +68,7 @@ class DeepInversionLaplaceHook(object):
 
     def nll(self):
         if self.inputs is None:
-            return torch.tensor(0.0, device=self.gmrf.a.device)
+            return torch.tensor(0.0, device=self.lcm.a.device)
             
         if len(self.inputs.shape) == 4:
             nch = self.inputs.shape[1]
@@ -518,7 +518,7 @@ class WelfordCovarianceTracker(object):
         self.n = new_n
 
     def get_correlation_matrix(self):
-        """Returns the final C x C Correlation matrix for GMRF fitting."""
+        """Returns the final C x C Correlation matrix for lcm fitting."""
         if self.n < 2:
             return None
         

@@ -12,7 +12,7 @@ from continual_runner import losses
 from continual_runner import finetuning
 from continual_runner import class_wise_contrastive_buffer
 from continual_runner import cl_functions
-from inversion.gmrf import LaplaceKernelGMRF
+from inversion.lcm import LCM
 import utils
 
 
@@ -52,8 +52,8 @@ class TaskClassContrastiveRunner(object):
             self.inv_buffer.local_path = os.path.join(self.local_path, 'buffer')
             self.inv_buffer.generator.local_path = os.path.join(self.local_path, 'buffer', 'generator')
 
-            if hasattr(self.inv_buffer.generator, "gmrfs") and self.inv_buffer.generator.gmrfs is not None:
-                self.gmrfs = self.inv_buffer.generator.gmrfs
+            if hasattr(self.inv_buffer.generator, "lcms") and self.inv_buffer.generator.lcms is not None:
+                self.lcms = self.inv_buffer.generator.lcms
         else:
             self.inv_buffer = class_wise_contrastive_buffer.ClassWiseContrastiveBuffer(
                 local_path=os.path.join(self.local_path, 'buffer'),
@@ -495,10 +495,10 @@ class TaskClassContrastiveRunner(object):
             self.old_model.cuda()
 
         if self.inversion_params['alpha_frob'] > 0.0:
-            if hasattr(self, 'gmrfs') and self.gmrfs is not None:
-                self.gmrfs.cuda()
+            if hasattr(self, 'lcms') and self.lcms is not None:
+                self.lcms.cuda()
 
-            print("\n==> Extracting empirical covariance and locking GMRFs...")
+            print("\n==> Extracting empirical covariance and locking lcms...")
             device = next(self.backbone.parameters()).device
             
             target_modules = [m for m in self.backbone.modules() if isinstance(m, torch.nn.BatchNorm2d)]
@@ -543,15 +543,15 @@ class TaskClassContrastiveRunner(object):
                 h.remove()
 
             if self.inversion_params['alpha_frob'] > 0.0:
-                if not hasattr(self, "gmrfs"):
-                    self.gmrfs = torch.nn.ModuleList([LaplaceKernelGMRF(m.num_features).to(device) for m in target_modules])
+                if not hasattr(self, "lcms"):
+                    self.lcms = torch.nn.ModuleList([LCM(m.num_features).to(device) for m in target_modules])
 
                 n_new = end_class - start_class
                 n_total = end_class
                 ratio_old = (n_total - n_new) / n_total if start_class > 0 else 0.0
                 ratio_new = n_new / n_total if start_class > 0 else 1.0
 
-                for layer_idx, gmrf in enumerate(self.gmrfs):
+                for layer_idx, lcm in enumerate(self.lcms):
                     n_total_samples = n_buffers[layer_idx]
                     
                     Sigma_curr = M2_buffers[layer_idx] / (n_total_samples - 1 + 1e-6)
@@ -566,21 +566,21 @@ class TaskClassContrastiveRunner(object):
                         R_global = R_curr
                     else:
                         with torch.no_grad():
-                            R_old = gmrf.correlation().detach()
+                            R_old = lcm.correlation().detach()
                         R_global = ratio_old * R_old + ratio_new * R_curr
 
-                    utils.fit_gmrf_correlation(gmrf, R_global)
+                    utils.fit_lcm_correlation(lcm, R_global)
 
             self.backbone.train()
-            print(f"==> Pure Topology GMRF memory locked! Class Ratio: {ratio_new:.2f}")
+            print(f"==> Pure Topology lcm memory locked! Class Ratio: {ratio_new:.2f}")
 
-            self.inv_buffer.generator.gmrfs = copy.deepcopy(self.gmrfs).eval()
+            self.inv_buffer.generator.lcms = copy.deepcopy(self.lcms).eval()
             self.inv_buffer.generator.alpha_frob = self.inversion_params.get('alpha_frob', 0.1)
         else:
-            print("\n==> Skipping GMRF covariance extraction (alpha_frob = 0.0). PMI speed mode!")
-            self.gmrfs = None
+            print("\n==> Skipping lcm covariance extraction (alpha_frob = 0.0). PMI speed mode!")
+            self.lcms = None
             if hasattr(self.inv_buffer, 'generator'):
-                self.inv_buffer.generator.gmrfs = None
+                self.inv_buffer.generator.lcms = None
                 self.inv_buffer.generator.alpha_frob = 0.0
 
         # compute class mean and std for current task.
@@ -607,7 +607,7 @@ class TaskClassContrastiveRunner(object):
             all_cls2mean[ci] = cur_cls2mean[ci]
             all_cls2std[ci] = cur_cls2std[ci]
         self.inv_buffer.update_buffer(teacher_model=self.old_model, train_loader=train_loader)
-        utils.log_memory_comparison(self.local_path, self.gmrfs)
+        utils.log_memory_comparison(self.local_path, self.lcms)
 
     def prepare_before_training(self, task_id):
         self.inv_buffer.generate_data_by_selection(
