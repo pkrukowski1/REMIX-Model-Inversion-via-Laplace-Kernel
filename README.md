@@ -25,4 +25,4 @@ conda activate <env_name>
 
 - The continual learning implementation for the ViT backbone (corresponding to Table 2 in the paper) is provided in the `clip` directory. Similarly, due to the moderate feature dimensionality, the exact Gaussian NLL is evaluated explicitly.
 
-- The `visualizations` directory contains model inversion pipelines based on pretrained ResNet-34 and ViT backbones, together with the efficient structured NLL computation used for high-dimensional feature-map inversion and qualitative sample generation.
+- The `efficient_inversion` directory contains model inversion pipelines based on pretrained ResNet-34 and ViT backbones, together with the efficient structured NLL computation used for high-dimensional feature-map inversion and qualitative sample generation.

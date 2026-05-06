@@ -1,4 +1,4 @@
-# Visualizations
+# Efficient Inversion
 
 This directory contains the implementation of model inversion pipelines based on pretrained ResNet-34 and ViT-B/16 backbones, together with the plotting utilities used to generate the figures presented throughout the paper.
 
