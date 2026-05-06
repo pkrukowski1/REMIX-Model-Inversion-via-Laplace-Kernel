@@ -13,13 +13,9 @@ from lcm import LCM
 
 torch.manual_seed(1)
 
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
 os.environ["TMPDIR"] = "/tmp" 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# All 4 target classes
 TARGET_WNIDS = [
     "n02113978", # Dog
     "n04285008", # Cars
@@ -31,7 +27,6 @@ TARGET_WNIDS = [
 BASE_DATA_DIR = "/shared/sets/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/"
 STATS = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
-# STRATEGY #2: Train for longer to allow lower layers to converge
 LCM_EPOCHS = 200 
 
 print(f"Running LCM Fitting and Log-Likelihood Analysis for ViT on 4 Classes on: {DEVICE}")
@@ -68,15 +63,8 @@ with torch.no_grad():
     model(dummy)
 
 layer_dims = {l: hooks_lcm[l].features.size(-1) for l in LAYERS}
-
-# ============================================================
-# 3. LCM MODULE & HELPER FUNCTIONS
-# ============================================================
 lcms = {l: LCM(layer_dims[l]).to(DEVICE) for l in LAYERS}
 
-# ============================================================
-# 4. DATA EXTRACTION (ALL 4 CLASSES)
-# ============================================================
 print("\nGathering images for Dog, Car, Koala, and Greenhouse...")
 image_paths = []
 for wnid in TARGET_WNIDS:
@@ -121,9 +109,6 @@ with torch.no_grad():
         
         lcms[l].mu = target_means_lcm[l].unsqueeze(0)
 
-# ============================================================
-# 5. TRAIN LCM (FROBENIUS) & MEASURE LL
-# ============================================================
 hist_lcm_ll = {l: [] for l in LAYERS}
 hist_base_ll = {l: [] for l in LAYERS}
 
@@ -131,7 +116,6 @@ print(f"\n--- LCM training (epochs: {LCM_EPOCHS}) ---")
 
 def get_layer_lr_multiplier(layer_name):
     block_idx = int(layer_name.replace('block', '')) 
-    # Massive 25x boost for block 0 to rip through the variance landscape!
     return 1.0 + (24.0 * ((11 - block_idx) / 11.0))
 
 opts = {}
@@ -150,16 +134,12 @@ num_samples = extracted_features_gpu['block0'].size(0)
 batches_per_epoch = math.ceil(num_samples / BATCH_SIZE_FIT)
 TOTAL_STEPS = LCM_EPOCHS * batches_per_epoch
 
-# STRATEGY #2: Shortened Plateau with Smooth Cosine Decay
 def lr_lambda(step):
     t = step / TOTAL_STEPS
     
-    # Hold LR at maximum power for only the first 40% (up to epoch 80)
     if t < 0.4:
         return 1.0
     else:
-        # Smooth cosine decay to exactly 0 for the remaining 60%
-        # This completely dampens oscillations at the end of training
         decay_progress = (t - 0.4) / 0.6 
         return 0.5 * (1.0 + math.cos(math.pi * decay_progress))
 
@@ -199,7 +179,6 @@ for epoch in range(LCM_EPOCHS):
                 
         batches += 1
 
-    # Format output for the 12 blocks
     msg = f"Ep {epoch+1:3d}/{LCM_EPOCHS} | "
     for l in LAYERS:
         avg_lcm = epoch_lcm_ll[l] / batches
@@ -207,14 +186,10 @@ for epoch in range(LCM_EPOCHS):
         hist_lcm_ll[l].append(avg_lcm)
         hist_base_ll[l].append(avg_base)
     
-    # Print sample metrics (first and last block) to keep output readable
     msg += f"B0: LCM {hist_lcm_ll['block0'][-1]:,.1f} | B11: LCM {hist_lcm_ll['block11'][-1]:,.1f}"
     msg += f" | B0: Base {hist_base_ll['block0'][-1]:,.1f} | B11: Base {hist_base_ll['block11'][-1]:,.1f}"
     print(msg)
-    
-# ============================================================
-# 6. EXPORT LL VALUES TO TXT
-# ============================================================
+
 print("\n--- Exporting Log-Likelihood values to TXT ---")
 txt_path = "./log_likelihood_values_vit_4_classes.txt"
 

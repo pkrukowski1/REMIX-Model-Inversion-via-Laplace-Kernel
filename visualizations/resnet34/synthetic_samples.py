@@ -14,9 +14,6 @@ from lcm import LCM
 
 torch.manual_seed(1)
 
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
 os.environ["TMPDIR"] = "/tmp" 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -38,9 +35,6 @@ DREAM_BATCH_SIZE = 50
 
 print(f"Running Dreamer on: {DEVICE}")
 
-# ============================================================
-# 2. MODEL & HOOKS
-# ============================================================
 model = resnet34(weights=ResNet34_Weights.IMAGENET1K_V1).to(DEVICE)
 model.eval()
 
@@ -84,9 +78,6 @@ for module in model.modules():
     if isinstance(module, nn.BatchNorm2d):
         bn_hooks.append(BNHook(module))
 
-# ============================================================
-# 3. LCM MODULE & HELPER FUNCTIONS & INIT
-# ============================================================
 lcms = {l: LCM(layer_dims[l]).to(DEVICE) for l in LAYERS}
 
 print("LCM's statistics initialization...")
@@ -113,9 +104,6 @@ with torch.no_grad():
         target_vars_lcm[l] = f_cat.var(0).to(DEVICE)
         lcms[l].mu = target_means_lcm[l].unsqueeze(0)
 
-# ============================================================
-# 4. TRAIN OR LOAD LCM
-# ============================================================
 LCM_PATH = f"./lcm_resnet34_{TARGET_WNID}.pth"
 if os.path.exists(LCM_PATH):
     print(f"\n--- LCM parameters loaded from {LCM_PATH} ---")
@@ -164,9 +152,6 @@ else:
         
     torch.save({l: lcms[l].state_dict() for l in LAYERS}, LCM_PATH)
 
-# ============================================================
-# 5. DREAMING (Main Pyramid)
-# ============================================================
 print(f"\n--- Starting Dream ({DREAM_BATCH_SIZE} images) ---")
 current_img = None
 
@@ -258,9 +243,6 @@ for cfg in configs:
 
     current_img = param
 
-# ============================================================
-# 5 FINAL ENHANCEMENTS
-# ============================================================
 print("\n--- Final Polish (Boosting CE, no jitter/blur) ---")
 
 W_CE_FINAL = W_CE * 20.0 
@@ -305,10 +287,6 @@ for step in range(400):
     if step % 100 == 0:
         conf = F.softmax(logits, dim=1)[:, TARGET_CLASS_INDEX].mean().item() * 100
         print(f" Polish Step {step:4d} | CE: {loss_ce.item():.2f} | Conf: {conf:.1f}%")
-
-# ============================================================
-# 6. EXPORT
-# ============================================================
 
 with torch.no_grad():
     out = current_img.cpu()

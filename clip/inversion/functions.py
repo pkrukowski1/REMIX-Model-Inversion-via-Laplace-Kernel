@@ -67,6 +67,9 @@ class DeepInversionLaplaceHook(object):
             self.precision = torch.cholesky_inverse(self.L).contiguous()
 
     def nll(self):
+        """
+        Here we calculate standard NLL, because dimension is ~10^3 magnitude
+        """
         if self.inputs is None:
             return torch.tensor(0.0, device=self.lcm.a.device)
             

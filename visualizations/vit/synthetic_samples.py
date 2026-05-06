@@ -13,9 +13,6 @@ from lcm import LCM
 
 torch.manual_seed(1)
 
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
 os.environ["TMPDIR"] = "/tmp" 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -37,9 +34,6 @@ DREAM_BATCH_SIZE = 50
 
 print(f"Running Dreamer on: {DEVICE}")
 
-# ============================================================
-# 2. MODEL & HOOKS
-# ============================================================
 model = vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1).to(DEVICE)
 model.eval()
 
@@ -58,7 +52,6 @@ class FeatureHook:
         # ViT output is (B, 197, 768). Drop CLS token (index 0) to keep spatial features.
         self.features = out[:, 1:, :].clone()
 
-# Hook into spaced Transformer encoder blocks
 target_blocks = [_ for _ in range(12)]
 hooks_lcm = {f"block{i}": FeatureHook(model.encoder.layers[i]) for i in target_blocks}
 LAYERS = list(hooks_lcm.keys())
@@ -70,7 +63,6 @@ with torch.no_grad():
 layer_dims = {l: hooks_lcm[l].features.size(-1) for l in LAYERS}
 
 
-# Replaces BNHook to capture and match stats for ViT blocks
 class BlockStatHook:
     def __init__(self, module):
         self.module = module
@@ -82,7 +74,6 @@ class BlockStatHook:
 
     def hook_fn(self, module, inp, out):
         tmp = out.clone() 
-        # Aggregate over Batch and Sequence dimensions -> (768,)
         self.mean = tmp.mean(dim=(0, 1))
         self.var = tmp.var(dim=(0, 1), unbiased=False)
 
@@ -90,9 +81,6 @@ stat_hooks = []
 for i in range(12): # ViT-B has 12 encoder blocks
     stat_hooks.append(BlockStatHook(model.encoder.layers[i]))
 
-# ============================================================
-# 3. LCM MODULE & HELPER FUNCTIONS & INIT
-# ============================================================
 lcms = {l: LCM(layer_dims[l]).to(DEVICE) for l in LAYERS}
 
 print("LCM's statistics initialization...")

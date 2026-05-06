@@ -19,9 +19,6 @@ from utils import *
 
 torch.manual_seed(1)
 
-# ============================================================
-# 1. CONFIGURATION
-# ============================================================
 os.environ["TMPDIR"] = "/tmp" 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -68,14 +65,8 @@ with torch.no_grad():
 
 layer_dims = {l: hooks_lcm[l].features.numel() // 1 for l in LAYERS}
 
-# ============================================================
-# 3. LCM MODULE & HELPER FUNCTIONS
-# ============================================================
 lcms = {l: LCM(layer_dims[l]).to(DEVICE) for l in LAYERS}
 
-# ============================================================
-# 4. DATA EXTRACTION (ALL 4 CLASSES)
-# ============================================================
 print("\nGathering images for Dog, Car, Koala, and Greenhouse...")
 image_paths = []
 for wnid in TARGET_WNIDS:
@@ -120,9 +111,6 @@ with torch.no_grad():
         
         lcms[l].mu = target_means_lcm[l].unsqueeze(0)
 
-# ============================================================
-# 4.5 MEMORY & THEORETICAL COST CALCULATION
-# ============================================================
 print("\n--- Calculating Memory Statistics ---")
 mem_txt_path = "./memory_flops_report.txt"
 
@@ -165,9 +153,6 @@ with open(mem_txt_path, "w") as f:
 
 print(f"Memory statistics saved to {mem_txt_path}")
 
-# ============================================================
-# 5. TRAIN LCM (FROBENIUS) & MEASURE LL
-# ============================================================
 LCM_PATH = f"./lcm_resnet34_4_classes.pth"
 
 hist_lcm_ll = {l: [] for l in LAYERS}
@@ -303,9 +288,6 @@ if len(epoch_times) > 0:
         f_mem.write(f"Average time per epoch (excluding epoch 1 profiler overhead): {avg_epoch_time:.2f} seconds\n")
         f_mem.write("-" * 50 + "\n")
     
-# ============================================================
-# 6. LL PLOTS
-# ============================================================
 print("\n--- Generating Log-Likelihood Plots ---")
 fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 axes = axes.flatten()
@@ -332,9 +314,6 @@ plot_path = "./log_likelihood_comparison_4_classes.pdf"
 plt.savefig(plot_path, dpi=300, bbox_inches='tight', format='pdf')
 print(f"Plots saved to {plot_path}")
 
-# ============================================================
-# 7. EXPORT LL VALUES TO TXT
-# ============================================================
 print("\n--- Exporting Log-Likelihood values to TXT ---")
 txt_path = "./log_likelihood_values_4_classes.txt"
 

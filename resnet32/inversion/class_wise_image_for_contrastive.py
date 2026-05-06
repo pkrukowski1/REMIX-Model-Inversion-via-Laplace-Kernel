@@ -136,15 +136,11 @@ class ClassWiseContrastiveInversion(object):
         if not hasattr(self, 'lcms') or self.lcms is None:
             return {}
         
-        # 1. Get all BN modules from the backbone in order
         bn_modules = [m for m in self.model.backbone.modules() if isinstance(m, torch.nn.BatchNorm2d)]
         
-        # 2. Map ModuleList or standard list to the modules by order
-        # This is the fix for your ModuleList AttributeError
         if isinstance(self.lcms, (list, torch.nn.ModuleList)):
             return {bn_modules[i]: self.lcms[i] for i in range(min(len(bn_modules), len(self.lcms)))}
         
-        # 3. If it's already a dict, return it
         if isinstance(self.lcms, dict):
             lcm_list = list(self.lcms.values())
             return {bn_modules[i]: lcm_list[i] for i in range(min(len(bn_modules), len(lcm_list)))}
@@ -659,6 +655,9 @@ class DeepInversionLaplaceHook:
 
     @property
     def nll(self):
+        """
+        Here we calculate standard NLL, because dimension is ~10^3 magnitude
+        """
         if self.value is None:
             return None
         

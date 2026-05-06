@@ -2,9 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 
-# ==========================================
-# 1. Academic Styling (Enhanced Visibility)
-# ==========================================
 sns.set_theme(style="whitegrid")
 
 plt.rcParams.update({
@@ -12,14 +9,11 @@ plt.rcParams.update({
     "font.family": "serif",
     "axes.labelweight": "bold", 
     "axes.labelsize": 14,       
-    "xtick.labelsize": 14,      # Increased tick value size
-    "ytick.labelsize": 14,      # Increased tick value size
+    "xtick.labelsize": 14,
+    "ytick.labelsize": 14,
     "legend.fontsize": 12
 })
 
-# ==========================================
-# 2. Input Data (Full Ablation Sweep)
-# ==========================================
 ablation_data = {
     "0.0001": [95.62, 91.10, 85.82, 81.39, 78.44, 75.58, 72.90, 69.86, 68.97, 67.38],
     "0.0005": [95.62, 91.54, 85.76, 80.96, 78.72, 76.08, 73.08, 70.83, 69.22, 67.36],
@@ -30,9 +24,6 @@ ablation_data = {
     "0.05":   [95.62, 91.97, 85.82, 82.04, 78.93, 75.27, 72.36, 70.14, 69.08, 67.38]
 }
 
-# ==========================================
-# 3. Process Metrics
-# ==========================================
 labels = list(ablation_data.keys())
 curves = list(ablation_data.values())
 
@@ -51,7 +42,6 @@ def autolabel(rects, ax):
                     xytext=(0, 4), textcoords="offset points", ha='center', va='bottom', 
                     fontsize=12, fontweight='bold')
 
-# --- PLOT 1: Final Task Accuracy ---
 fig1, ax1 = plt.subplots(figsize=(8, 3.2), dpi=300)
 
 rects1 = ax1.bar(x_indices, last_task_accuracies, width, color=colors, edgecolor='black', alpha=0.85, zorder=3)
@@ -75,7 +65,6 @@ plt.tight_layout()
 plt.savefig("last_task_accuracy_ablation.pdf", format='pdf', bbox_inches='tight')
 plt.show()
 
-# --- PLOT 2: Average Incremental Accuracy ---
 fig2, ax2 = plt.subplots(figsize=(8, 3.2), dpi=300)
 
 rects2 = ax2.bar(x_indices, avg_incremental_accuracies, width, color=colors, edgecolor='black', alpha=0.85, zorder=3)

@@ -2,9 +2,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
-# ============================================================
-# 1. Configuration & Data Loading
-# ============================================================
 file_path = 'log_likelihood_values_vit_4_classes.txt'
 
 try:
