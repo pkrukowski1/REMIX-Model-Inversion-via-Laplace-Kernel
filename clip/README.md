@@ -13,7 +13,7 @@ This implementation builds upon the following open-source projects:
 By default, all datasets are expected to be located at:
 
 ```bash
-/shared/sets/datasets/
+/raid/NFS_SHARE/datasets/
 ```
 To modify the dataset location, please edit:
 ```bash

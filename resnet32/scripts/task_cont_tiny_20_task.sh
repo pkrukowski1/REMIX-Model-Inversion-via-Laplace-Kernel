@@ -4,14 +4,13 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --partition=rtx4090
 
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 # base parameter
-BASE_PATH='/shared/results/pkrukowski/LaplaceKernelInContinualLearning/tiny_imagenet_20x10'
+BASE_PATH='/raid/NFS_SHARE/results/patryk.krukowski/LaplaceKernelInContinualLearning/tiny_imagenet_20x10'
 dataset='seq_tinyimagenet'
-data_path='/shared/sets/datasets/tiny-imagenet-200'
+data_path='/raid/NFS_SHARE/datasets/tiny-imagenet-200'
 use_cuda=1
 max_task=-1
 save_ckpt=1

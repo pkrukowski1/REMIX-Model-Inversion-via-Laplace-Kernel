@@ -26,7 +26,7 @@ TARGET_CLASS_INDEX = 268  # Dog
 # TARGET_CLASS_INDEX = 580 # greenhouse
 
 # NOTE: Please change the directory!
-DATA_DIR = f"/shared/sets/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/{TARGET_WNID}"
+DATA_DIR = f"/raid/NFS_SHARE/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/{TARGET_WNID}"
 
 STATS = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 LCM_EPOCHS = 0

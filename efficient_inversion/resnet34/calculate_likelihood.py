@@ -30,7 +30,7 @@ TARGET_WNIDS = [
     "n03457902"  # Greenhouse
 ]
 
-BASE_DATA_DIR = "/shared/sets/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/"
+BASE_DATA_DIR = "/raid/NFS_SHARE/datasets/ImageNet/ILSVRC/Data/CLS-LOC/train/"
 STATS = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 LCM_EPOCHS = 100
 

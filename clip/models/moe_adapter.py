@@ -193,7 +193,7 @@ class Learner(BaseLearner):
         self._train(train_loader, self.test_loader, tb_logger)
         if self._memory_size > 0 and self._total_classes < data_manager.n_classes:
             # change to inversion
-            if bool(self.args['data_stat']):
+            if bool(self.args['data_stat']) and not self._real_replay():
                 # update input feature stats according to real data
                 self.inversion_runner.update_input_stat(data_loader=train_loader)
             # update model
@@ -206,50 +206,61 @@ class Learner(BaseLearner):
             self.inv_model = self.old_model.visual
             self.inversion_runner.update_model(model=self.inv_model)
 
-            self.update_buffer_params(
-                train_loader=train_loader,
-                start_class=self._known_classes,
-                end_class=self._total_classes
-            )
-
-            # count class distribution.
-            if self.args['stat_type'] == 'gmm':
-                # add support for GMM feature modelling
-                cls2stat, cls2feats = feature_stats.get_gmm_class_distribution(
-                    backbone=self.inv_model, data_loader=train_loader,
-                    classes=list(range(self._known_classes, self._total_classes)),
-                    on_cuda=True, components=self.args['components']
-                )
-            else:
-                cls2stat, cls2feats = feature_stats.get_class_wise_distribution(
-                    backbone=self.inv_model, data_loader=train_loader,
-                    classes=list(range(self._known_classes, self._total_classes)), on_cuda=True
-                )
-            # add momentum center update
-            if self.args['stat_mom'] > 0 and self.args['stat_type'] == 'rand':
-                self.cls2stat = feature_stats.update_old_centers(
-                    cls2stat=self.cls2stat,
-                    backbone=self.inv_model,
-                    start_block=self.args['start_block'],
-                    normalize=False,
-                    samples=self._data_memory,
-                    labels=self._targets_memory,
-                    on_cuda=True,
-                    momentum=self.args['stat_mom']
-                )
-            self.cls2stat.update(cls2stat)
-            if self.args['feat_type'] == 'cont':
-                self.train_cont_models(
-                    cls2feats=cls2feats, start_class=self._known_classes, end_class=self._total_classes)
-            if self.args['int_tune_step'] <= 0:
-                mem_sample, mem_label = self.build_inv_data(cls2stat=self.cls2stat)
+            if self._real_replay():
+                # Upper bound: same memory budget and representation as the inverted buffer,
+                # but filled with real training samples instead of model-inversion samples.
+                mem_sample, mem_label = self.build_real_replay_data(data_manager=data_manager)
                 self._data_memory = mem_sample
                 self._targets_memory = mem_label
-                # update buffer
                 self.buffer = SimpleReplayDataset(
                     mem_data=[self._data_memory, self._targets_memory],
                     transforms=train_dataset.trsf if self.args['start_block'] == 0 else None
                 )
+            else:
+                self.update_buffer_params(
+                    train_loader=train_loader,
+                    start_class=self._known_classes,
+                    end_class=self._total_classes
+                )
+
+                # count class distribution.
+                if self.args['stat_type'] == 'gmm':
+                    # add support for GMM feature modelling
+                    cls2stat, cls2feats = feature_stats.get_gmm_class_distribution(
+                        backbone=self.inv_model, data_loader=train_loader,
+                        classes=list(range(self._known_classes, self._total_classes)),
+                        on_cuda=True, components=self.args['components']
+                    )
+                else:
+                    cls2stat, cls2feats = feature_stats.get_class_wise_distribution(
+                        backbone=self.inv_model, data_loader=train_loader,
+                        classes=list(range(self._known_classes, self._total_classes)), on_cuda=True
+                    )
+                # add momentum center update
+                if self.args['stat_mom'] > 0 and self.args['stat_type'] == 'rand':
+                    self.cls2stat = feature_stats.update_old_centers(
+                        cls2stat=self.cls2stat,
+                        backbone=self.inv_model,
+                        start_block=self.args['start_block'],
+                        normalize=False,
+                        samples=self._data_memory,
+                        labels=self._targets_memory,
+                        on_cuda=True,
+                        momentum=self.args['stat_mom']
+                    )
+                self.cls2stat.update(cls2stat)
+                if self.args['feat_type'] == 'cont':
+                    self.train_cont_models(
+                        cls2feats=cls2feats, start_class=self._known_classes, end_class=self._total_classes)
+                if self.args['int_tune_step'] <= 0:
+                    mem_sample, mem_label = self.build_inv_data(cls2stat=self.cls2stat)
+                    self._data_memory = mem_sample
+                    self._targets_memory = mem_label
+                    # update buffer
+                    self.buffer = SimpleReplayDataset(
+                        mem_data=[self._data_memory, self._targets_memory],
+                        transforms=train_dataset.trsf if self.args['start_block'] == 0 else None
+                    )
         if len(self._multiple_gpus) > 1:
             self._network = self._network.module
         if 'save_ckpt' in self.args and bool(self.args['save_ckpt']):  # add support for saving checkpoint
@@ -415,7 +426,7 @@ class Learner(BaseLearner):
     def _train(self, train_loader, test_loader, tb_logger=None):
         self._network.to(self._device)
         # add function of pseudo tuning
-        if self.args['int_tune_step'] > 0 and self._known_classes > 0:
+        if self.args['int_tune_step'] > 0 and self._known_classes > 0 and not self._real_replay():
             if self.args['vis_tune_blocks'] > 0 or self.args['txt_tune_blocks'] > 0:
                 tuned_blocks, tuned_ft, vis_layer_names, ori_blocks, ori_ft = self.pseudo_finetuning(
                     train_loader=train_loader)
@@ -784,6 +795,46 @@ class Learner(BaseLearner):
                 step += 1
         self._network.set_is_train(is_train=None)
         self._network.eval()
+
+    def _real_replay(self):
+        return self.args.get('replay_mode', 'inversion') == 'real'
+
+    def build_real_replay_data(self, data_manager):
+        """Upper bound for model inversion: replay `memory_per_class` *real* training samples per class.
+
+        Same budget and same representation as the inverted buffer. With start_block > 0 we store the
+        input of block `start_block` computed from the real image (start_block=1: output of the frozen
+        patch-embedding conv); with start_block = 0 we store the image itself, which is then augmented
+        at replay time exactly like the inverted images. Earlier classes are kept; the classes of the
+        task that just finished are added.
+        """
+        from PIL import Image
+        from utils.data_manager import pil_loader
+        if not hasattr(self, '_real_mem_samples'):
+            self._real_mem_samples, self._real_mem_labels = [], []
+        per_class = self.args['memory_per_class']
+        rng = np.random.RandomState(int(self.args['seed']) * 1000 + self._cur_task)
+        stem = None
+        if self.args['start_block'] > 0:
+            blocks, _ = utils.split_clip_blocks(model=self.inv_model, split_cnn=True, normalize=True)
+            stem = torch.nn.Sequential(*blocks[:self.args['start_block']]).eval()
+        for ci in range(self._known_classes, self._total_classes):
+            data, _, dset = data_manager.get_dataset(
+                np.arange(ci, ci + 1), source='train', mode='test', ret_data=True, trfm=self.test_trfm)
+            picked = rng.choice(len(data), size=min(per_class, len(data)), replace=False)
+            for i in picked:
+                if stem is None:
+                    img = pil_loader(data[i]) if data_manager.use_path else Image.fromarray(data[i])
+                    self._real_mem_samples.append(img)
+                else:
+                    _, x, _ = dset[int(i)]
+                    with torch.no_grad():
+                        feat = stem(x.unsqueeze(0).to(self._device).float())
+                    self._real_mem_samples.append(feat[0].detach().cpu())
+                self._real_mem_labels.append(ci)
+        logging.info('Real-replay memory: {} samples for {} classes'.format(
+            len(self._real_mem_samples), self._total_classes))
+        return list(self._real_mem_samples), np.array(self._real_mem_labels)
 
     def build_inv_data(self, cls2stat, int_slt_params=None):
         print('number of inversion class:', len(cls2stat))

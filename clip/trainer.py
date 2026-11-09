@@ -9,6 +9,7 @@ from utils.toolkit import count_parameters
 import os
 import gc
 import time
+import json
 
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
@@ -221,6 +222,37 @@ def _train(args):
     logging.info("==================================================")
     logging.info(f"Total Continual Learning Time: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
     logging.info("==================================================")
+
+    _dump_results(args, data_manager, cnn_curve["top1"], total_duration)
+
+
+def _dump_results(args, data_manager, top1_curve, total_duration):
+    """Machine-readable summary of one run: <local_path>/results.json.
+    Used by the SLURM sweep as a 'done' marker and for mean/std/paired tests across seeds."""
+    if not args.get("local_path"):
+        return
+    curve = [float(a) for a in top1_curve]
+    results = {
+        "dataset": args["dataset"],
+        "seed": int(args["seed"]),
+        "prefix": args.get("prefix", ""),
+        "alpha_frob": float(args.get("alpha_frob") or 0.0),
+        "upper_bound": args.get("upper_bound", "none"),
+        "replay_mode": args.get("replay_mode", "inversion"),
+        "init_cls": int(args["init_cls"]),
+        "increment": int(args["increment"]),
+        "nb_tasks": int(data_manager.nb_tasks),
+        "class_order": [int(c) for c in data_manager._class_order],
+        "top1_curve": curve,
+        "avg_acc": float(np.mean(curve)) if curve else None,
+        "last_acc": curve[-1] if curve else None,
+        "total_time_sec": float(total_duration),
+    }
+    os.makedirs(args["local_path"], exist_ok=True)
+    out_file = os.path.join(args["local_path"], "results.json")
+    with open(out_file, "w") as fw:
+        json.dump(results, fw, indent=2)
+    logging.info("Results written to {}".format(out_file))
 
 
 def _set_device(args):

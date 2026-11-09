@@ -4,14 +4,13 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --partition=rtx4090
 
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 # base parameter
-BASE_PATH='/shared/results/pkrukowski/LaplaceKernelInContinualLearning/cifar_5x20'
+BASE_PATH='/raid/NFS_SHARE/results/patryk.krukowski/LaplaceKernelInContinualLearning/cifar_5x20'
 dataset='seq_cifar100'
-data_path='/shared/sets/datasets'
+data_path='/raid/NFS_SHARE/datasets'
 use_cuda=1
 max_task=-1
 save_ckpt=1

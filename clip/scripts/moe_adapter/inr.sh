@@ -6,11 +6,11 @@
 #SBATCH --mem=32G
 #SBATCH --partition=rtx4090
 #SBATCH --array=0-6
-#SBATCH --output=/shared/results/pkrukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/inr/logs/array_%A_task_%a.out
+#SBATCH --output=/raid/NFS_SHARE/results/patryk.krukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/inr/logs/array_%A_task_%a.out
 
 export CUBLAS_WORKSPACE_CONFIG=:4096:8
 
-BASE_PATH="/shared/results/pkrukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/inr"
+BASE_PATH="/raid/NFS_SHARE/results/patryk.krukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/inr"
 LOG_PATH="$BASE_PATH/logs"
 
 mkdir -p "$BASE_PATH"

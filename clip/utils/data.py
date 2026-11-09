@@ -4,6 +4,7 @@ import numpy as np
 from torchvision import datasets, transforms
 from torchvision.transforms.functional import InterpolationMode
 from utils.toolkit import split_images_labels, get_dataset_class_names
+from utils.imagenet_r_classes import imagenet_r_class_names
 from clip_backbones.clip import clip
 from PIL import Image
 from torch.utils.data import Dataset
@@ -12,7 +13,7 @@ import yaml
 import warnings
 
 
-base_dir = '/shared/sets/datasets/'
+base_dir = '/raid/NFS_SHARE/datasets/'
 
 
 def check_isfile(fpath):
@@ -242,7 +243,7 @@ class iCIFAR224(iData):
 
     def download_data(self):
         try:
-            base_dir = '/shared/sets/datasets/'
+            base_dir = '/raid/NFS_SHARE/datasets/'
             train_dataset = datasets.cifar.CIFAR100(os.path.join(base_dir, 'cifarpy'), train=True, download=True)
             test_dataset = datasets.cifar.CIFAR100(os.path.join(base_dir, 'cifarpy'), train=False, download=True)
         except:
@@ -343,7 +344,7 @@ class iImageNetR(iData):
             # base_dir = './data/'
             base_dir = os.path.dirname(os.getcwd())
         else:
-            base_dir = '/shared/sets/datasets'
+            base_dir = '/raid/NFS_SHARE/datasets'
 
         # assert 0, "You should specify the folder of your dataset"
         # train_dir = "./data/imagenet-r/train/"
@@ -353,13 +354,18 @@ class iImageNetR(iData):
 
         train_dset = datasets.ImageFolder(train_dir)
         test_dset = datasets.ImageFolder(test_dir)
+        # ImageFolder assigns labels from the folders present in each split separately.
+        assert train_dset.classes == test_dset.classes, 'ImageNet-R train/test class folders differ'
 
         self.train_data, self.train_targets = split_images_labels(train_dset.imgs)
         self.test_data, self.test_targets = split_images_labels(test_dset.imgs)
-        
+
         # self.class_names = get_dataset_class_names(base_dir, 'imagenet-r')
-        self.class_names = list(load_json('utils/des_imagenetr.json').keys())
-        print(self.class_names)
+        # Was: list(load_json('utils/des_imagenetr.json').keys()) -> the first 200 of the 1000 ImageNet-1k
+        # names, misaligned with ImageNet-R labels. Map each wnid folder to its ImageNet-1k name instead.
+        self.class_names = imagenet_r_class_names(
+            train_dset.classes, load_json('utils/des_imagenetr.json').keys())
+        print(list(zip(train_dset.classes[:5], self.class_names[:5])), '...', len(self.class_names), 'classes')
 
 
 class iImageNetA(iData):
@@ -404,7 +410,7 @@ class CUB(iData):
         if self.args['gadi']:
             base_dir = os.path.dirname(os.getcwd())
         else:
-            base_dir = '/shared/sets/datasets/cub_200_2011/CUB_200_2011'
+            base_dir = '/raid/NFS_SHARE/datasets/cub_200_2011/CUB_200_2011'
 
         train_dset = CUB200Dataset(root_dir=base_dir, is_train=True, transform=self.train_trsf)
         test_dset = CUB200Dataset(root_dir=base_dir, is_train=False, transform=self.test_trsf)
@@ -452,7 +458,7 @@ class CUB(iData):
 #             # base_dir = './data/'
 #             base_dir = os.path.dirname(os.getcwd())
 #         else:
-#             base_dir = '/shared/sets/datasets/'
+#             base_dir = '/raid/NFS_SHARE/datasets/'
 #         # train_dir = "./data/cub/train/"
 #         # test_dir = "./data/cub/test/"
 #         train_dir = os.path.join(base_dir, 'cub/train')
@@ -546,7 +552,7 @@ class TinyIMN(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/shared/sets/datasets/'
+            base_dir = '/raid/NFS_SHARE/datasets/'
         # train_dir = "./data/cub/train/"
         # test_dir = "./data/cub/test/"
         train_dir = os.path.join(base_dir, 'tiny-imagenet-200')
@@ -554,13 +560,13 @@ class TinyIMN(iData):
         self.class_names = load_json('utils/labels.json')['tinyimagenet']
         print(self.class_names)
         
-        wnids_file = "/shared/sets/datasets/tiny-imagenet-200/wnids.txt"
+        wnids_file = "/raid/NFS_SHARE/datasets/tiny-imagenet-200/wnids.txt"
         with open(wnids_file, "r") as f:
             class_ids = sorted([line.strip() for line in f.readlines()])  # Sort WNIDs
         # print(f"Total classes: {len(class_ids)}")
         # print(f"Example sorted class IDs: {class_ids[:5]}")
         # Load WordNet ID to class name mapping
-        words_file = "/shared/sets/datasets/tiny-imagenet-200/words.txt"
+        words_file = "/raid/NFS_SHARE/datasets/tiny-imagenet-200/words.txt"
         wnid_to_classname = {}
         with open(words_file, "r") as f:
             for line in f.readlines():
@@ -630,7 +636,7 @@ class DomainNet(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/shared/sets/datasets/'
+            base_dir = '/raid/NFS_SHARE/datasets/'
 
         
         self.image_list_root = os.path.join(base_dir, 'domainnet/')
@@ -731,7 +737,7 @@ class AirCraft(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/shared/sets/datasets/'
+            base_dir = '/raid/NFS_SHARE/datasets/'
         # train_dir = "./data/cub/train/"
         # test_dir = "./data/cub/test/"
         train_dir = os.path.join(base_dir, 'aircraft/train')
@@ -780,7 +786,7 @@ class Cars(iData):
         if self.args['gadi']:
             base_dir = './data/'
         else:
-            base_dir = '/shared/sets/datasets/'
+            base_dir = '/raid/NFS_SHARE/datasets/'
         train_dir = os.path.join(base_dir, 'cars/train')
         test_dir = os.path.join(base_dir, 'cars/test')
 
