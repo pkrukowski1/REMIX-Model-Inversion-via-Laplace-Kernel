@@ -4,7 +4,6 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --partition=rtx4090
 #SBATCH --output=/raid/NFS_SHARE/results/patryk.krukowski/LaplaceKernelInContinualLearning/CLIP/moe_adapter/rebuttal/logs/%x_%A_%a.out
 #
 # One SLURM array task = one (dataset, method, seed) run of MoE-Adapter. Each experiment has its own submit

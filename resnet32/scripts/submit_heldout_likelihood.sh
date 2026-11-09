@@ -7,7 +7,9 @@
 #   bash scripts/submit_heldout_likelihood.sh                    # 12 tasks
 #   CONDA_ENV=laplace_kernel_in_cl bash scripts/submit_heldout_likelihood.sh   # extra args go to sbatch
 #
-# Finished parts are skipped. Summarise with: python tools/collect_heldout_likelihood.py
+# Each task gets the smallest A100 (MIG slice or whole card) with at least GPU_GB GB (default 8);
+# GRES=gpu:<type>:1 overrides. Finished parts are skipped. Summarise with:
+# python tools/collect_heldout_likelihood.py
 
 set -eo pipefail
 
@@ -19,9 +21,12 @@ export OUT_DIR="${OUT_DIR:-$BASE_PATH/heldout_likelihood}"
 export DATA_PATH="${DATA_PATH:-/raid/NFS_SHARE/datasets}"
 export CODE_DIR="${CODE_DIR:-$(pwd)}"
 MAX_PARALLEL="${MAX_PARALLEL:-12}"
+GPU_GB="${GPU_GB:-8}"
 
 [[ -f "$CODE_DIR/tools/heldout_likelihood.py" ]] || { echo "Run this from the resnet32 directory (or set CODE_DIR)"; exit 1; }
-JOB_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/heldout_likelihood.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+JOB_SCRIPT="$SCRIPT_DIR/heldout_likelihood.sh"
+source "$SCRIPT_DIR/gpu.sh"
 
 missing=0
 for s in $CKPT_SEEDS; do
@@ -42,11 +47,15 @@ echo "Held-out likelihood: $N_RUNS tasks (max $MAX_PARALLEL at once)"
 echo "  backbones: $CKPT_TAG, seeds $CKPT_SEEDS"
 echo "  parts:     $PARTS"
 echo "  results:   $OUT_DIR/parts/seed_<seed>_<part>.json"
+GPU=$(gpu_options "$GPU_GB") || exit 1
+read -r -a GPU_OPTS <<< "$GPU"
+echo "  GPU:       $GPU (at least $GPU_GB GB)"
 
 mkdir -p "$BASE_PATH/logs" "$OUT_DIR"
 sbatch --export=ALL \
        --job-name=heldout_likelihood \
        --array=0-$(( N_RUNS - 1 ))%"$MAX_PARALLEL" \
        --output="$BASE_PATH/logs/%x_%A_%a.out" \
+       "${GPU_OPTS[@]}" \
        "$@" \
        "$JOB_SCRIPT"
