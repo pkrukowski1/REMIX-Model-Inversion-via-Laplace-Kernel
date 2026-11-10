@@ -49,9 +49,12 @@ def apply_upper_bound(args, mode):
     real_replay -- identical pipeline and memory budget (`memory_per_class` per class), but the replay
                    buffer holds *real* training samples (in the same representation as the inverted
                    ones, i.e. the input of block `start_block`) instead of model-inversion samples.
-                   This is the ceiling for any inversion method under the same budget.
+                   The samples of a class are drawn once and kept.
+    real_replay_fresh -- as real_replay, but the samples of every seen class are redrawn after each
+                   task, like PMI's inverted buffer, which is regenerated after each task.
     """
     args.setdefault('replay_mode', 'inversion')
+    args.setdefault('replay_refresh', 0)
     args['upper_bound'] = mode if mode is not None else 'none'
     if args['upper_bound'] == 'none':
         return
@@ -59,8 +62,9 @@ def apply_upper_bound(args, mode):
     if mode == 'joint':
         args['init_cls'] = args['n_classes']
         args['increment'] = args['n_classes']
-    elif mode == 'real_replay':
+    elif mode in ('real_replay', 'real_replay_fresh'):
         args['replay_mode'] = 'real'
+        args['replay_refresh'] = int(mode == 'real_replay_fresh')
     else:
         raise ValueError('Unknown upper bound: {}'.format(mode))
 
@@ -92,7 +96,7 @@ def setup_parser():
     parser.add_argument('--alpha_frob', type=float)
     parser.add_argument('--prefix', type=str, default=None,
                         help='Tag added to the log file name (keeps logs of different methods apart).')
-    parser.add_argument('--upper_bound', type=str, default=None, choices=['none', 'joint', 'real_replay'],
+    parser.add_argument('--upper_bound', type=str, default=None, choices=['none', 'joint', 'real_replay', 'real_replay_fresh'],
                         help='Run an upper bound instead of the inversion-based method.')
     parser.add_argument('--save_pseudo_samples', action='store_true', default=False, help="Save generated images to disk")
 

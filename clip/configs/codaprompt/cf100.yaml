@@ -1,0 +1,25 @@
+prefix: ""
+dataset: "cifar224"
+n_classes: 100
+memory_size: 0
+memory_per_class: 0
+fixed_memory: false
+shuffle: true
+init_cls: 10
+increment: 10
+model_name: 'codaprompt'
+backbone_type: 'ViT-B-16'
+pretrained_weight: 'openai'
+device: [0]
+seed: [1993]
+
+# CODA-Prompt (Smith et al., CVPR 2023), CIFAR-100 settings of the official code
+batch_size: 128
+tuned_epoch: 20
+init_lr: 0.001
+weight_decay: 0.0
+optimizer: 'adam'
+pool_size: 100
+n_ctx_vision: 8
+prompt_depth_vision: 5
+ortho_mu: 0.0

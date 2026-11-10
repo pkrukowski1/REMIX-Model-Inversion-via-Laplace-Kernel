@@ -35,8 +35,7 @@ class PromptLearner(nn.Module):
         self.task_count = 0
         self.emb_d = emb_d
         self.key_d = key_dim
-        # self.n_tasks = n_tasks
-        self.n_tasks = 10
+        self.n_tasks = int(args.get('nb_tasks') or 10)
         self._init_smart(emb_d, prompt_param)
 
         # e prompt init
@@ -71,8 +70,7 @@ class PromptLearner(nn.Module):
         self.e_layers = range(self.args['prompt_depth_vision'])
 
         # strenth of ortho penalty
-        # self.ortho_mu = prompt_param[2]
-        self.ortho_mu = 0
+        self.ortho_mu = float(self.args.get('ortho_mu', 0.0))
         
     def process_task_count(self):
         self.task_count += 1
@@ -229,7 +227,7 @@ class PromptLearner(nn.Module):
 
 
 def ortho_penalty(t):
-    return ((t @ t.T - torch.eye(t.shape[0]).cuda())**2).mean()
+    return ((t @ t.T - torch.eye(t.shape[0], device=t.device))**2).mean()
 
 
 class CustomViT(nn.Module):
@@ -312,7 +310,7 @@ class CustomViT(nn.Module):
 
         x = x.permute(1, 0, 2)  # NLD -> LND
         # x = self.transformer(x)
-        prompt_loss = torch.zeros((1,), requires_grad=True).cuda()
+        prompt_loss = torch.zeros((1,), device=x.device)
         for i, blk in enumerate(self.transformer_blocks):
 
             if prompt is not None:
@@ -352,16 +350,20 @@ class CustomViT(nn.Module):
         
         # return pooled, prompt_loss
 
-    def forward(self, x, pen=False, train=False, task_id=None, if_print=False, skip_conv=False, norm_feat=False):
+    def query(self, x, skip_conv=False):
+        with torch.no_grad():
+            q, _ = self.forward_feature(x, skip_conv=skip_conv)
+            return self.ln_post(q[:, 0, :])
+
+    def forward(self, x, pen=False, train=False, task_id=None, if_print=False, skip_conv=False, norm_feat=False,
+                q=None):
 
         if self.prompt is not None:
-            with torch.no_grad():
-                q, _ = self.forward_feature(x, skip_conv=skip_conv)
-                # print(q.shape)
-                q = q[:, 0, :]
+            if q is None:
+                q = self.query(x, skip_conv=skip_conv)
             out, prompt_loss = self.forward_feature(
                 x, prompt=self.prompt, q=q, train=train, task_id=task_id, if_print=if_print, skip_conv=skip_conv)
-            out = out[:, 0, :]
+            out = self.ln_post(out[:, 0, :])
             if norm_feat:
                 out = F.normalize(out, dim=-1)
             # out = out[:, :25, :].mean(dim=1)
@@ -412,7 +414,7 @@ def get_vl_codaprompt(cfg, n_classes):
     print(f"Parameters count: {len(enabled)}")
     print(f"Total number of tunable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
 
-    model = model.to('cuda')
+    model = model.to('cuda' if torch.cuda.is_available() else 'cpu')
 
     device_count = torch.cuda.device_count()
     if device_count > 1:

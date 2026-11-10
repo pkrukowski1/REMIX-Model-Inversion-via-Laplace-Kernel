@@ -806,11 +806,13 @@ class Learner(BaseLearner):
         input of block `start_block` computed from the real image (start_block=1: output of the frozen
         patch-embedding conv); with start_block = 0 we store the image itself, which is then augmented
         at replay time exactly like the inverted images. Earlier classes are kept; the classes of the
-        task that just finished are added.
+        task that just finished are added. With replay_refresh, the samples of every seen class are
+        redrawn after each task instead, like the inverted buffer, which is regenerated after each task.
         """
         from PIL import Image
         from utils.data_manager import pil_loader
-        if not hasattr(self, '_real_mem_samples'):
+        refresh = bool(self.args.get('replay_refresh', 0))
+        if refresh or not hasattr(self, '_real_mem_samples'):
             self._real_mem_samples, self._real_mem_labels = [], []
         per_class = self.args['memory_per_class']
         rng = np.random.RandomState(int(self.args['seed']) * 1000 + self._cur_task)
@@ -818,7 +820,7 @@ class Learner(BaseLearner):
         if self.args['start_block'] > 0:
             blocks, _ = utils.split_clip_blocks(model=self.inv_model, split_cnn=True, normalize=True)
             stem = torch.nn.Sequential(*blocks[:self.args['start_block']]).eval()
-        for ci in range(self._known_classes, self._total_classes):
+        for ci in range(0 if refresh else self._known_classes, self._total_classes):
             data, _, dset = data_manager.get_dataset(
                 np.arange(ci, ci + 1), source='train', mode='test', ret_data=True, trfm=self.test_trfm)
             picked = rng.choice(len(data), size=min(per_class, len(data)), replace=False)

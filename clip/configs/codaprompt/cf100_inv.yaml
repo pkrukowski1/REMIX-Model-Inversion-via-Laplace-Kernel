@@ -1,0 +1,55 @@
+prefix: ""
+dataset: "cifar224"
+n_classes: 100
+memory_size: 0
+memory_per_class: 5  # inverted samples per class, as PMI/REMIX with MoE-Adapter
+fixed_memory: false
+shuffle: true
+init_cls: 10
+increment: 10
+model_name: 'codaprompt_inv'
+backbone_type: 'ViT-B-16'
+pretrained_weight: 'openai'
+device: [0]
+seed: [1993]
+
+# CODA-Prompt (Smith et al., CVPR 2023), CIFAR-100 settings of the official code
+batch_size: 128
+tuned_epoch: 20
+init_lr: 0.001
+weight_decay: 0.0
+optimizer: 'adam'
+pool_size: 100
+n_ctx_vision: 8
+prompt_depth_vision: 5
+ortho_mu: 0.0
+
+# model-inversion replay (same settings as PMI/REMIX with MoE-Adapter, configs/moe_adapter/cf100.yaml)
+alpha_frob: 0.0  # 0 = PMI; > 0 = REMIX (set with --alpha_frob)
+start_block: 1
+img_size: '3,32,32'
+inv_lr: 0.1
+train_steps: 200
+alpha_pr: 0.005
+alpha_rf: 0.002
+size_change: ''
+layer_size_change: '300,600,900,1200'
+l_pr: 0.0
+l_aug: 0
+l_lr: 0.1
+tune_steps: 600
+tune_lr: 0.01
+return_best: 0
+search_params: 0
+milestones: '2000,3000'
+gen_batch_size: 20
+layer_batch: 40
+feat_norm: 0
+rf_factor: 1.0
+input_aug: 0
+data_stat: 1
+
+# replay losses: cross-entropy over all seen classes + distillation from the previous model on old classes
+lambda_replay: 1.0
+lambda_kd: 1.0
+kd_temp: 2.0

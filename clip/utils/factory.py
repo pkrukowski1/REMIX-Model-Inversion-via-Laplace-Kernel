@@ -20,7 +20,10 @@ def get_model(model_name, args, data_manager=None):
     elif 'dualprompt' in name:
         from models.dualprompt import Learner
     elif 'codaprompt' in name:
-        from models.codaprompt import Learner
+        if 'inv' in name:
+            from models.codaprompt_inv import Learner
+        else:
+            from models.codaprompt import Learner
     elif 'finetune' in name:
         from models.finetune import Learner
     elif 'promptsrc' in name:
